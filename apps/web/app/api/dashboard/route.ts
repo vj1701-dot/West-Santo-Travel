@@ -1,0 +1,11 @@
+import { getDashboardSnapshot } from "@west-santo/data";
+
+import { ok } from "@/lib/api/response";
+import { requireApiUser } from "@/lib/auth/guards";
+
+export async function GET() {
+  const auth = await requireApiUser();
+  if (auth instanceof Response) return auth;
+  const dashboard = await getDashboardSnapshot();
+  return ok(dashboard);
+}

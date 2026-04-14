@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "paths": {
+      "@west-santo/core": [
+        "../core/src/index.ts"
+      ],
+      "@west-santo/core/*": [
+        "../core/src/*"
+      ]
+    }
+  },
+  "include": [
+    "src/**/*"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "west-santo-travel",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace apps/web",
+    "dev": "npm run dev --workspace apps/web",
+    "typecheck": "npm run typecheck --workspace apps/web",
+    "test": "npm run test --workspace packages/core",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:push": "prisma db push --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:seed": "node prisma/seed.mjs",
+    "docker:test": "docker compose up --build -d && docker compose exec web npm run test && docker compose down -v",
+    "dev:bot": "npm run start --workspace apps/bot",
+    "dev:scheduler": "npm run start --workspace apps/scheduler"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "prisma": "^6.7.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.7.0",
+    "zod": "^3.24.4"
+  }
+}

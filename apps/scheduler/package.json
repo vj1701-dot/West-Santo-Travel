@@ -1,0 +1,12 @@
+{
+  "name": "west-santo-scheduler",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx src/index.ts"
+  },
+  "dependencies": {
+    "@west-santo/data": "0.1.0"
+  }
+}

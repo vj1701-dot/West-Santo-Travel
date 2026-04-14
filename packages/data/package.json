@@ -1,0 +1,11 @@
+{
+  "name": "@west-santo/data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "dependencies": {
+    "@prisma/client": "^6.7.0",
+    "@west-santo/core": "0.1.0"
+  }
+}
