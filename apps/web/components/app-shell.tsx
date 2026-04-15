@@ -62,21 +62,7 @@ export function AppShell({
               </strong>
               <p style={{ marginTop: "0.25rem", fontSize: "0.875rem" }}>
                 {currentEffectiveRole}
-                {currentEffectiveRole !== currentUser.role ? ` preview` : ""}
               </p>
-              {currentUser.role === "ADMIN" ? (
-                <div className="preview-links">
-                  <Link className={`preview-link ${currentEffectiveRole === "ADMIN" ? "preview-link--active" : ""}`} href={pathname}>
-                    Admin
-                  </Link>
-                  <Link className={`preview-link ${currentEffectiveRole === "COORDINATOR" ? "preview-link--active" : ""}`} href={`${pathname}?previewRole=COORDINATOR`}>
-                    Coordinator
-                  </Link>
-                  <Link className={`preview-link ${currentEffectiveRole === "PASSENGER" ? "preview-link--active" : ""}`} href={`${pathname}?previewRole=PASSENGER`}>
-                    Passenger
-                  </Link>
-                </div>
-              ) : null}
               <div style={{ marginTop: "0.75rem" }}>
                 <LogoutButton />
               </div>
@@ -88,17 +74,6 @@ export function AppShell({
       </aside>
 
       <main className="content">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Operations Console</p>
-            <h2>West Region Santos</h2>
-          </div>
-          <div className="row-meta">
-            <span className="pill">Live operations</span>
-            {currentUser ? <LogoutButton /> : <LoginButton />}
-          </div>
-        </header>
-
         <div className="mobile-nav">
           {visibleNavItems.map((item) => {
             const active = pathname === item.href;

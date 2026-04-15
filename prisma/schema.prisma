@@ -428,7 +428,7 @@ model FlightSegment {
 model Accommodation {
   id           String   @id @default(uuid()) @db.Uuid
   itineraryId  String   @db.Uuid
-  mandirId     String   @db.Uuid
+  mandirId     String?  @db.Uuid
   room         String?
   checkInDate  DateTime? @db.Date
   checkOutDate DateTime? @db.Date
@@ -437,7 +437,7 @@ model Accommodation {
   updatedAt    DateTime @updatedAt @db.Timestamptz(6)
 
   itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  mandir    Mandir    @relation(fields: [mandirId], references: [id])
+  mandir    Mandir?   @relation(fields: [mandirId], references: [id])
 }
 
 model TransportTask {

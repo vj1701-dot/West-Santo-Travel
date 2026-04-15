@@ -10,6 +10,7 @@ import {
   ReminderRunStatus,
   ReminderTrigger,
   SubmissionStatus,
+  TransportTaskType,
   TransportTaskStatus,
   UserRole,
 } from "@prisma/client";
@@ -35,7 +36,6 @@ type FlightSegmentInput = {
   arrivalAirportId: string;
   departureTimeLocal: string;
   arrivalTimeLocal: string;
-  notes?: string | null;
 };
 
 type PublicSubmissionPayload = {
@@ -217,7 +217,10 @@ async function createFlightSegmentRecord(tx: Prisma.TransactionClient, input: Fl
       arrivalTimeLocal: localDateTimeStringToDate(input.arrivalTimeLocal),
       departureTimeUtc,
       arrivalTimeUtc,
-      notes: input.notes ?? null,
+    },
+    include: {
+      departureAirport: true,
+      arrivalAirport: true,
     },
   });
 
@@ -280,7 +283,6 @@ async function updateFlightSegmentRecord(
       arrivalTimeLocal: localDateTimeStringToDate(nextArrivalTimeLocal),
       departureTimeUtc: zonedLocalDateTimeToUtc(nextDepartureTimeLocal, departureAirport.timeZone),
       arrivalTimeUtc: zonedLocalDateTimeToUtc(nextArrivalTimeLocal, arrivalAirport.timeZone),
-      notes: typeof input.notes === "string" || input.notes === null ? input.notes : current.notes,
     },
   });
 
@@ -365,7 +367,6 @@ async function createItineraryFromSubmission(
       arrivalAirportId: airportByCode.get(segment.arrivalAirport.toUpperCase())!.id,
       departureTimeLocal: segment.departureTimeLocal,
       arrivalTimeLocal: segment.arrivalTimeLocal,
-      notes: segment.notes ?? null,
     });
   }
 
@@ -847,6 +848,196 @@ export async function createItinerary(input: { notes?: string | null; passengerI
   });
 }
 
+async function findTripDetailOrThrow(tx: Prisma.TransactionClient, id: string) {
+  return tx.itinerary.findUniqueOrThrow({
+    where: { id },
+    include: {
+      itineraryPassengers: { include: { passenger: true } },
+      flightSegments: { orderBy: { segmentOrder: "asc" }, include: { departureAirport: true, arrivalAirport: true } },
+      accommodations: { include: { mandir: true } },
+      booking: true,
+      transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
+      approvalRequests: { orderBy: { requestedAt: "desc" } },
+    },
+  });
+}
+
+async function createTransportEntriesForSegment(
+  tx: Prisma.TransactionClient,
+  input: {
+    itineraryId: string;
+    segment: Awaited<ReturnType<typeof createFlightSegmentRecord>>;
+    entries: TripTransportEntryInput[];
+    createdByUserId?: string | null;
+    departureTimeLocal: string;
+    arrivalTimeLocal: string;
+  },
+) {
+  if (input.entries.length === 0) {
+    return;
+  }
+
+  const mappings = await tx.airportMandirMapping.findMany({
+    where: {
+      airportId: {
+        in: [input.segment.departureAirportId, input.segment.arrivalAirportId],
+      },
+    },
+    orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
+  });
+
+  const defaultMappingByAirport = new Map<string, (typeof mappings)[number]>();
+  for (const mapping of mappings) {
+    if (!defaultMappingByAirport.has(mapping.airportId)) {
+      defaultMappingByAirport.set(mapping.airportId, mapping);
+    }
+  }
+
+  for (const entry of input.entries) {
+    const isPickup = entry.taskType === "PICKUP";
+    const airport = isPickup ? input.segment.arrivalAirport : input.segment.departureAirport;
+    const airportId = isPickup ? input.segment.arrivalAirportId : input.segment.departureAirportId;
+    const scheduledTimeLocal =
+      entry.scheduledTimeLocal ??
+      (isPickup ? input.arrivalTimeLocal : input.departureTimeLocal);
+    const transportTask = await tx.transportTask.create({
+      data: {
+        itineraryId: input.itineraryId,
+        flightSegmentId: input.segment.id,
+        taskType: entry.taskType,
+        airportId,
+        mandirId: defaultMappingByAirport.get(airportId)?.mandirId ?? null,
+        scheduledTimeLocal: localDateTimeStringToDate(scheduledTimeLocal),
+        scheduledTimeUtc: zonedLocalDateTimeToUtc(scheduledTimeLocal, airport.timeZone),
+        status: (entry.driverIds?.length ?? 0) > 0 ? TransportTaskStatus.ASSIGNED : TransportTaskStatus.UNASSIGNED,
+        notes: entry.notes ?? null,
+        createdByUserId: input.createdByUserId ?? null,
+      },
+    });
+
+    if ((entry.driverIds?.length ?? 0) > 0) {
+      await tx.transportTaskDriver.createMany({
+        data: Array.from(new Set(entry.driverIds)).map((driverId) => ({
+          transportTaskId: transportTask.id,
+          driverId,
+          assignedByUserId: input.createdByUserId ?? null,
+        })),
+      });
+    }
+  }
+}
+
+async function syncTripRelations(tx: Prisma.TransactionClient, itineraryId: string, input: TripInput) {
+  await tx.itineraryPassenger.deleteMany({ where: { itineraryId } });
+  await tx.itineraryPassenger.createMany({
+    data: input.passengerIds.map((passengerId) => ({
+      itineraryId,
+      passengerId,
+    })),
+  });
+
+  const hasBooking = Boolean(
+    input.booking &&
+      ((input.booking.confirmationNumber ?? "").trim() ||
+        input.booking.totalCost === 0 ||
+        (input.booking.totalCost !== null && input.booking.totalCost !== undefined)),
+  );
+
+  if (hasBooking && input.booking) {
+    await tx.booking.upsert({
+      where: { itineraryId },
+      update: {
+        confirmationNumber: input.booking.confirmationNumber ?? null,
+        totalCost:
+          input.booking.totalCost === null || input.booking.totalCost === undefined
+            ? null
+            : new Prisma.Decimal(input.booking.totalCost),
+        notes: null,
+      },
+      create: {
+        itineraryId,
+        confirmationNumber: input.booking.confirmationNumber ?? null,
+        totalCost:
+          input.booking.totalCost === null || input.booking.totalCost === undefined
+            ? null
+            : new Prisma.Decimal(input.booking.totalCost),
+        notes: null,
+      },
+    });
+  } else {
+    await tx.booking.deleteMany({ where: { itineraryId } });
+  }
+
+  const accommodationNotes = input.accommodation?.notes?.trim() ?? "";
+  if (accommodationNotes) {
+    const existingAccommodation = await tx.accommodation.findFirst({
+      where: { itineraryId },
+      select: { id: true },
+    });
+
+    if (existingAccommodation) {
+      await tx.accommodation.update({
+        where: { id: existingAccommodation.id },
+        data: {
+          mandirId: null,
+          room: null,
+          checkInDate: null,
+          checkOutDate: null,
+          notes: accommodationNotes,
+        },
+      });
+      await tx.accommodation.deleteMany({
+        where: {
+          itineraryId,
+          id: { not: existingAccommodation.id },
+        },
+      });
+    } else {
+      await tx.accommodation.create({
+        data: {
+          itineraryId,
+          mandirId: null,
+          room: null,
+          checkInDate: null,
+          checkOutDate: null,
+          notes: accommodationNotes,
+        },
+      });
+    }
+  } else {
+    await tx.accommodation.deleteMany({ where: { itineraryId } });
+  }
+
+  await tx.transportTaskDriver.deleteMany({
+    where: { transportTask: { itineraryId } },
+  });
+  await tx.transportTask.deleteMany({ where: { itineraryId } });
+  await tx.flightSegment.deleteMany({ where: { itineraryId } });
+
+  for (const segment of input.segments) {
+    const createdSegment = await createFlightSegmentRecord(tx, {
+      itineraryId,
+      segmentOrder: segment.segmentOrder,
+      airline: segment.airline,
+      flightNumber: segment.flightNumber,
+      departureAirportId: segment.departureAirportId,
+      arrivalAirportId: segment.arrivalAirportId,
+      departureTimeLocal: segment.departureTimeLocal,
+      arrivalTimeLocal: segment.arrivalTimeLocal,
+    });
+
+    await tx.transportTask.deleteMany({ where: { flightSegmentId: createdSegment.id } });
+    await createTransportEntriesForSegment(tx, {
+      itineraryId,
+      segment: createdSegment,
+      entries: segment.transportEntries ?? [],
+      createdByUserId: input.createdByUserId ?? null,
+      departureTimeLocal: segment.departureTimeLocal,
+      arrivalTimeLocal: segment.arrivalTimeLocal,
+    });
+  }
+}
+
 export async function createTrip(input: TripInput) {
   return prisma.$transaction(async (tx) => {
     const itinerary = await tx.itinerary.create({
@@ -861,46 +1052,7 @@ export async function createTrip(input: TripInput) {
       },
     });
 
-    if (input.booking) {
-      await tx.booking.create({
-        data: {
-          itineraryId: itinerary.id,
-          confirmationNumber: input.booking.confirmationNumber ?? null,
-          totalCost:
-            input.booking.totalCost === null || input.booking.totalCost === undefined
-              ? null
-              : new Prisma.Decimal(input.booking.totalCost),
-          notes: input.booking.notes ?? null,
-        },
-      });
-    }
-
-    if (input.accommodation) {
-      await tx.accommodation.create({
-        data: {
-          itineraryId: itinerary.id,
-          mandirId: input.accommodation.mandirId,
-          room: input.accommodation.room ?? null,
-          checkInDate: input.accommodation.checkInDate ? new Date(input.accommodation.checkInDate) : null,
-          checkOutDate: input.accommodation.checkOutDate ? new Date(input.accommodation.checkOutDate) : null,
-          notes: input.accommodation.notes ?? null,
-        },
-      });
-    }
-
-    for (const segment of input.segments) {
-      await createFlightSegmentRecord(tx, {
-        itineraryId: itinerary.id,
-        ...segment,
-      });
-    }
-
-    if (input.transportNotes) {
-      await tx.transportTask.updateMany({
-        where: { itineraryId: itinerary.id },
-        data: { notes: input.transportNotes },
-      });
-    }
+    await syncTripRelations(tx, itinerary.id, input);
 
     await createAuditLog(tx, {
       action: "TRIP_CREATED",
@@ -913,20 +1065,11 @@ export async function createTrip(input: TripInput) {
         segmentCount: input.segments.length,
         booking: input.booking ?? null,
         accommodation: input.accommodation ?? null,
-        transportNotes: input.transportNotes ?? null,
+        transportEntries: input.segments.map((segment) => segment.transportEntries?.length ?? 0),
       },
     });
 
-    return tx.itinerary.findUniqueOrThrow({
-      where: { id: itinerary.id },
-      include: {
-        itineraryPassengers: { include: { passenger: true } },
-        flightSegments: { orderBy: { segmentOrder: "asc" }, include: { departureAirport: true, arrivalAirport: true } },
-        accommodations: { include: { mandir: true } },
-        booking: true,
-        transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
-      },
-    });
+    return findTripDetailOrThrow(tx, itinerary.id);
   });
 }
 
@@ -950,6 +1093,43 @@ export async function updateItinerary(id: string, input: { notes?: string | null
       newValues: {
         notes: updated.notes,
         status: updated.status,
+      },
+    });
+
+    return updated;
+  });
+}
+
+export async function updateTrip(id: string, input: TripInput & { status?: Prisma.ItineraryUpdateInput["status"] }) {
+  return prisma.$transaction(async (tx) => {
+    const current = await findTripDetailOrThrow(tx, id);
+
+    await tx.itinerary.update({
+      where: { id },
+      data: {
+        notes: input.notes ?? null,
+        status: input.status,
+      },
+    });
+
+    await syncTripRelations(tx, id, input);
+
+    const updated = await findTripDetailOrThrow(tx, id);
+
+    await createAuditLog(tx, {
+      action: "TRIP_UPDATED",
+      entityType: "Itinerary",
+      entityId: id,
+      actorUserId: input.createdByUserId ?? null,
+      oldValues: {
+        notes: current.notes,
+        passengerIds: current.itineraryPassengers.map((item) => item.passenger.id),
+        segmentCount: current.flightSegments.length,
+      },
+      newValues: {
+        notes: updated.notes,
+        passengerIds: updated.itineraryPassengers.map((item) => item.passenger.id),
+        segmentCount: updated.flightSegments.length,
       },
     });
 
@@ -1485,12 +1665,30 @@ export async function reviewApprovalRequest(input: {
       } else if (approval.entityType === "FLIGHT_SEGMENT_CREATE") {
         await createFlightSegmentRecord(tx, proposedPayload as unknown as FlightSegmentInput);
       } else if (approval.entityType === "ITINERARY_UPDATE") {
-        await tx.itinerary.update({
-          where: { id: approval.itineraryId },
-          data: {
-            notes: typeof proposedPayload.notes === "string" || proposedPayload.notes === null ? proposedPayload.notes : undefined,
-          },
-        });
+        const tripPayload = proposedPayload as unknown as TripInput & {
+          status?: Prisma.ItineraryUpdateInput["status"];
+        };
+        if (Array.isArray(tripPayload.passengerIds) && Array.isArray(tripPayload.segments)) {
+          await tx.itinerary.update({
+            where: { id: approval.itineraryId },
+            data: {
+              notes: tripPayload.notes ?? null,
+              status: tripPayload.status,
+            },
+          });
+          await syncTripRelations(tx, approval.itineraryId, {
+            ...tripPayload,
+            createdByUserId: input.reviewedByUserId,
+          });
+        } else {
+          await tx.itinerary.update({
+            where: { id: approval.itineraryId },
+            data: {
+              notes: typeof tripPayload.notes === "string" || tripPayload.notes === null ? tripPayload.notes : undefined,
+              status: tripPayload.status,
+            },
+          });
+        }
       }
     }
 
@@ -1693,7 +1891,14 @@ type TripSegmentInput = {
   arrivalAirportId: string;
   departureTimeLocal: string;
   arrivalTimeLocal: string;
+  transportEntries?: TripTransportEntryInput[];
+};
+
+type TripTransportEntryInput = {
+  taskType: TransportTaskType;
+  driverIds?: string[];
   notes?: string | null;
+  scheduledTimeLocal?: string | null;
 };
 
 type TripInput = {
@@ -1703,16 +1908,10 @@ type TripInput = {
   booking?: {
     confirmationNumber?: string | null;
     totalCost?: number | null;
-    notes?: string | null;
   } | null;
   accommodation?: {
-    mandirId: string;
-    room?: string | null;
-    checkInDate?: string | null;
-    checkOutDate?: string | null;
     notes?: string | null;
   } | null;
-  transportNotes?: string | null;
   segments: TripSegmentInput[];
 };
 

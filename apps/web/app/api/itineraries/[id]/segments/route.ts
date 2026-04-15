@@ -12,7 +12,6 @@ const segmentSchema = z.object({
   arrivalAirportId: z.string().uuid(),
   departureTimeLocal: z.string().min(1),
   arrivalTimeLocal: z.string().min(1),
-  notes: z.string().nullable().optional(),
 });
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {

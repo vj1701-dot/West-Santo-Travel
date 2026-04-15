@@ -12,7 +12,7 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 
 - tracking santo and guest travel
 - managing passengers, drivers, and staff users
-- coordinating airport pickups and drop-offs
+- coordinating airport pickups and drop-offs, including multiple transport entries per segment
 - storing booking and accommodation details
 - handling approval-driven changes
 - collecting flight details from a public intake form
@@ -30,7 +30,7 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 
 - Centralize all travel and transport records in one database
 - Keep authentication external and authorization local
-- Auto-generate transport tasks from airport-to-mandir mappings
+- Support structured transport planning and driver assignment inside trip creation/editing
 - Preserve operational auditability for key changes
 - Support both internal planning and public intake
 - Make the Docker stack the default local and deployment runtime
@@ -55,17 +55,16 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 
 ### 2. Travel And Itinerary Management
 
-- Admins and coordinators must be able to create itineraries with one or more flight segments.
-- A trip can include passengers, booking details, accommodations, notes, and generated transport tasks.
+- Admins and coordinators must be able to create and fully edit itineraries with one or more flight segments.
+- A trip can include passengers, booking details, accommodation notes, trip notes, and transport tasks.
 - Flight times are entered in airport-local time, stored with the airport timezone, and converted to UTC for scheduling logic.
 - Passenger records are separate from user records so guests and non-login travelers can still be tracked.
 
 ### 3. Transport Operations
 
-- The system must map airports to mandirs through `AirportMandirMapping`.
-- When a flight segment is created or updated, the system must auto-generate a `PICKUP` task for monitored arrival airports.
-- When a flight segment is created or updated, the system must auto-generate a `DROPOFF` task for monitored departure airports.
-- Transport tasks can be assigned to one or more drivers.
+- The system uses airport-to-mandir mappings as defaults when creating transport tasks.
+- A flight segment can have multiple `PICKUP` tasks and multiple `DROPOFF` tasks.
+- Each transport task can be assigned to one or more drivers.
 - Transport task statuses are tracked separately from itinerary status.
 
 ### 4. Operational Workflows
@@ -96,9 +95,12 @@ The codebase already implements a meaningful v1, but some earlier Markdown docs 
 Implemented now:
 
 - Next.js web app with authenticated dashboard and management screens
+- Tailwind CSS and shadcn/ui foundation layered alongside the legacy CSS system
 - Prisma/Postgres data model for users, passengers, airports, mandirs, trips, segments, bookings, accommodations, drivers, tasks, approvals, submissions, reminders, notifications, and audits
 - Keycloak-backed login with local authorization checks
 - Docker Compose stack for web, bot, scheduler, database, and Keycloak
+- Add Flight trip editor with passenger autocomplete, airline autocomplete, per-segment pickup/dropoff entries, inline driver creation, and accommodation notes
+- Itinerary list redesign with edit flow at `/itineraries/[id]/edit`
 - Public submission intake endpoint and page at `/submit-flight`
 - CSV exports for trips, passengers, drivers, and users
 - Reminder rule CRUD and scheduler evaluation loop
@@ -146,6 +148,8 @@ Partially implemented or intentionally deferred:
 
 - `/`: dashboard and upcoming trip overview
 - `/add-flight`: trip builder for admins and coordinators
+- `/itineraries`: redesigned itinerary list with edit entrypoint
+- `/itineraries/[id]/edit`: full trip edit flow for admins and coordinators
 - `/passengers`: passenger directory and edit flow
 - `/drivers`: driver directory and airport assignment flow
 - `/users`: access provisioning and identity status
@@ -192,9 +196,9 @@ The web app exposes route handlers under `apps/web/app/api` for:
 - `Itinerary`: parent travel record
 - `FlightSegment`: one flight leg with local and UTC timestamps
 - `Booking` and `BookingAllocation`: booking reference, total cost, and passenger cost split
-- `Accommodation`: mandir stay details
+- `Accommodation`: optional stay/accommodation notes, with mandir linkage now optional
 - `Driver` and `DriverAirport`: transport driver directory and airport coverage
-- `TransportTask` and `TransportTaskDriver`: pickup/drop-off work assignments
+- `TransportTask` and `TransportTaskDriver`: pickup/drop-off work assignments, including multiple tasks per segment and multiple drivers per task
 - `ApprovalRequest`: pending and reviewed change requests
 - `PublicSubmission`: external intake record before admin review
 - `ReminderRule` and `ReminderRun`: no-code reminder configuration and execution history
@@ -233,7 +237,7 @@ The bootstrap and seed flow creates a usable local sandbox:
 - local user `coordinator@westsanto.org` with role `COORDINATOR`
 - passengers: two sample santos
 - drivers: one sample driver assigned to `LAX`
-- one itinerary with booking, accommodation, pickup task, and a pending approval request
+- one itinerary with booking, accommodation/task seed data, and a pending approval request
 
 Important auth note:
 
@@ -267,12 +271,16 @@ Minimum values to review in `.env`:
 - `KEYCLOAK_CLIENT_SECRET`
 - `KEYCLOAK_DEV_LOGIN_PASSWORD`
 - `TELEGRAM_BOT_TOKEN` if you want a live bot
+- `AIRPORT_IMPORT_URL` if you want to override the default OurAirports feed during seed/bootstrap
+- `MANDIR_IMPORT_ENABLED` if you want to skip the BAPS mandir import during seed/bootstrap
 
 Recommended local values:
 
 - `APP_BASE_URL=http://localhost:3000`
 - `KEYCLOAK_ISSUER_URL=http://localhost:8081/realms/west-santo`
 - `KEYCLOAK_BOOTSTRAP_MODE=development`
+- `AIRPORT_IMPORT_ENABLED=true`
+- `MANDIR_IMPORT_ENABLED=true`
 
 Notes:
 
@@ -353,6 +361,15 @@ Relevant scripts:
 - `npm run dev:scheduler`: run the scheduler locally
 - `npm run typecheck`: Next.js type generation plus TypeScript checks
 - `npm run test`: package-level tests in `packages/core`
+
+Airport import notes:
+
+- the bootstrap seed now imports a full airport directory from OurAirports during `npm run db:seed` and the Docker `bootstrap` service
+- by default it uses `https://davidmegginson.github.io/ourairports-data/airports.csv`
+- set `AIRPORT_IMPORT_ENABLED=false` to skip the bulk import
+- set `AIRPORT_IMPORT_URL` to point at a different CSV mirror if needed
+- the bootstrap seed also imports BAPS mandirs/centers from official `baps.org` global network pages
+- set `MANDIR_IMPORT_ENABLED=false` to skip the BAPS mandir import
 
 ## Operational Notes
 

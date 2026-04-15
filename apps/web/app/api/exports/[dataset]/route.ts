@@ -42,7 +42,7 @@ export async function GET(_: Request, context: { params: Promise<{ dataset: stri
       departureTimes: trip.flightSegments.map((segment) => segment.departureTimeLocal.toISOString()).join(" | "),
       bookingId: trip.booking?.confirmationNumber ?? "",
       totalPrice: trip.booking?.totalCost?.toString() ?? "",
-      accommodation: trip.accommodations.map((item) => item.mandir.name).join(" | "),
+      accommodation: trip.accommodations.map((item) => item.notes ?? item.mandir?.name ?? "").filter(Boolean).join(" | "),
       transport: trip.transportTasks.map((task) => `${task.taskType}:${task.status}:${task.airport.code}`).join(" | "),
       notes: trip.notes ?? "",
     }));

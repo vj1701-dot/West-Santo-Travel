@@ -1,4 +1,4 @@
-import { listAirports, listMandirs, listPassengers } from "@west-santo/data";
+import { listAirports, listDrivers, listPassengers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -14,7 +14,7 @@ export default async function AddFlightPage() {
     redirect("/access-denied");
   }
 
-  const [passengers, airports, mandirs] = await Promise.all([listPassengers(), listAirports(), listMandirs()]);
+  const [passengers, airports, drivers] = await Promise.all([listPassengers(), listAirports(), listDrivers()]);
 
   return (
     <AppShell currentUser={currentUser}>
@@ -23,6 +23,13 @@ export default async function AddFlightPage() {
         tooltip="Create complete trip records with flight segments, passenger assignments, booking details, and accommodation"
       />
       <TripBuilder
+        drivers={drivers.map((driver) => ({
+          id: driver.id,
+          name: driver.name,
+          phone: driver.phone,
+          notes: driver.notes,
+          airportCodes: driver.driverAirports.map((entry) => entry.airport.code),
+        }))}
         airports={airports.map((airport) => ({
           id: airport.id,
           code: airport.code,
@@ -30,12 +37,13 @@ export default async function AddFlightPage() {
           city: airport.city,
           country: airport.country,
         }))}
-        mandirs={mandirs.map((mandir) => ({ id: mandir.id, name: mandir.name }))}
         passengers={passengers.map((passenger) => ({
           id: passenger.id,
           label: `${passenger.firstName} ${passenger.lastName}`,
           detail: passenger.phone ?? passenger.email ?? passenger.legalName ?? passenger.passengerType,
         }))}
+        submitLabel="Save trip"
+        successPath="/itineraries"
       />
     </AppShell>
   );

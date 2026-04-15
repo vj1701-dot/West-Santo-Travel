@@ -6,9 +6,197 @@ import {
   TransportTaskType,
   UserRole,
 } from "@prisma/client";
+import tzLookup from "tz-lookup";
 import { localDateTimeStringToDate, zonedLocalDateTimeToUtc } from "@west-santo/core";
 
 const prisma = new PrismaClient();
+const AIRPORT_IMPORT_ENABLED = process.env.AIRPORT_IMPORT_ENABLED !== "false";
+const AIRPORT_IMPORT_URL =
+  process.env.AIRPORT_IMPORT_URL ?? "https://davidmegginson.github.io/ourairports-data/airports.csv";
+const AIRPORT_IMPORT_CHUNK_SIZE = 1000;
+const MANDIR_IMPORT_ENABLED = process.env.MANDIR_IMPORT_ENABLED !== "false";
+const BAPS_MANDIR_URLS = [
+  "https://www.baps.org/Global-Network/North-America/BAPS-North-America---All-Centers.aspx",
+  "https://www.baps.org/Global-Network/UK-and-Europe.aspx",
+  "https://www.baps.org/Global-Network/Africa.aspx",
+  "https://www.baps.org/Global-Network/Asia-Pacific.aspx",
+  "https://www.baps.org/Global-Network/MiddleEast.aspx",
+  "https://www.baps.org/Global-Network/India/BAPS-India---All-Centers.aspx",
+];
+
+function parseCsvLine(line) {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+
+    if (character === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      values.push(current);
+      current = "";
+      continue;
+    }
+
+    current += character;
+  }
+
+  values.push(current);
+  return values;
+}
+
+function decodeHtmlEntities(value) {
+  return value
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+function cleanHtmlBlock(value) {
+  return decodeHtmlEntities(
+    value
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+\n/g, "\n")
+      .replace(/\n\s+/g, "\n")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim(),
+  );
+}
+
+async function importAirports() {
+  if (!AIRPORT_IMPORT_ENABLED) {
+    console.log("[seed] airport import disabled");
+    return;
+  }
+
+  console.log(`[seed] downloading airports from ${AIRPORT_IMPORT_URL}`);
+  const response = await fetch(AIRPORT_IMPORT_URL);
+
+  if (!response.ok) {
+    throw new Error(`Unable to download airports CSV: ${response.status} ${response.statusText}`);
+  }
+
+  const csv = await response.text();
+  const lines = csv.split(/\r?\n/).filter(Boolean);
+
+  if (lines.length < 2) {
+    throw new Error("Airport CSV is empty.");
+  }
+
+  const headers = parseCsvLine(lines[0]);
+  const columnIndex = new Map(headers.map((header, index) => [header, index]));
+
+  const airports = [];
+  const seenCodes = new Set();
+
+  for (const line of lines.slice(1)) {
+    const row = parseCsvLine(line);
+    const code = row[columnIndex.get("iata_code")]?.trim().toUpperCase();
+    const name = row[columnIndex.get("name")]?.trim();
+    const type = row[columnIndex.get("type")]?.trim();
+    const latitude = Number(row[columnIndex.get("latitude_deg")]);
+    const longitude = Number(row[columnIndex.get("longitude_deg")]);
+
+    if (!code || !name || !type || type === "closed" || Number.isNaN(latitude) || Number.isNaN(longitude)) {
+      continue;
+    }
+
+    if (seenCodes.has(code)) {
+      continue;
+    }
+
+    let timeZone;
+
+    try {
+      timeZone = tzLookup(latitude, longitude);
+    } catch {
+      continue;
+    }
+
+    seenCodes.add(code);
+    airports.push({
+      code,
+      name,
+      city: row[columnIndex.get("municipality")]?.trim() || null,
+      state: row[columnIndex.get("iso_region")]?.trim() || null,
+      country: row[columnIndex.get("iso_country")]?.trim() || null,
+      timeZone,
+    });
+  }
+
+  console.log(`[seed] importing ${airports.length} airports`);
+
+  for (let index = 0; index < airports.length; index += AIRPORT_IMPORT_CHUNK_SIZE) {
+    const chunk = airports.slice(index, index + AIRPORT_IMPORT_CHUNK_SIZE);
+    await prisma.airport.createMany({
+      data: chunk,
+      skipDuplicates: true,
+    });
+  }
+}
+
+async function importMandirs() {
+  if (!MANDIR_IMPORT_ENABLED) {
+    console.log("[seed] mandir import disabled");
+    return;
+  }
+
+  const byName = new Map();
+
+  for (const url of BAPS_MANDIR_URLS) {
+    console.log(`[seed] downloading mandirs from ${url}`);
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`Unable to download BAPS centers page: ${response.status} ${response.statusText}`);
+    }
+
+    const html = await response.text();
+    const entryPattern =
+      /<h3[^>]*class="[^"]*content-title[^"]*"[^>]*>\s*<a[^>]*href\s*=\s*['"]([^'"]+)['"][^>]*>\s*([^<]+?)\s*<\/a>[\s\S]*?<\/h3>[\s\S]*?<div class="description">\s*([\s\S]*?)<\/div>/gi;
+
+    for (const match of html.matchAll(entryPattern)) {
+      const sourcePath = match[1]?.trim();
+      const heading = cleanHtmlBlock(match[2] ?? "");
+      const description = cleanHtmlBlock(match[3] ?? "");
+
+      if (!heading || !description || !/BAPS/i.test(description)) {
+        continue;
+      }
+
+      const lines = description.split("\n").map((line) => line.trim()).filter(Boolean);
+      const title = lines[0] ?? "BAPS Center";
+      const address = lines.slice(1).join(", ");
+
+      byName.set(heading, {
+        name: heading,
+        city: heading,
+        notes: `${title}${address ? ` | ${address}` : ""} | Source: https://www.baps.org${sourcePath}`,
+      });
+    }
+  }
+
+  const mandirs = Array.from(byName.values());
+  console.log(`[seed] importing ${mandirs.length} BAPS mandirs/centers`);
+  await prisma.mandir.createMany({
+    data: mandirs,
+    skipDuplicates: true,
+  });
+}
 
 async function main() {
   await prisma.notificationLog.deleteMany();
@@ -36,33 +224,26 @@ async function main() {
   await prisma.passenger.deleteMany();
   await prisma.user.deleteMany();
 
+  await importAirports();
+  await importMandirs();
+
   const [lax, ord] = await Promise.all([
-    prisma.airport.create({
-      data: {
-        code: "LAX",
-        name: "Los Angeles International",
-        city: "Los Angeles",
-        state: "CA",
-        country: "USA",
-        timeZone: "America/Los_Angeles",
-      },
-    }),
-    prisma.airport.create({
-      data: {
-        code: "ORD",
-        name: "Chicago O'Hare",
-        city: "Chicago",
-        state: "IL",
-        country: "USA",
-        timeZone: "America/Chicago",
-      },
-    }),
+    prisma.airport.findUnique({ where: { code: "LAX" } }),
+    prisma.airport.findUnique({ where: { code: "ORD" } }),
   ]);
 
+  if (!lax || !ord) {
+    throw new Error("Required seed airports LAX and ORD were not found after airport import.");
+  }
+
   const [laMandir, chicagoMandir] = await Promise.all([
-    prisma.mandir.create({ data: { name: "LA Mandir", city: "Los Angeles" } }),
-    prisma.mandir.create({ data: { name: "Chicago Mandir", city: "Chicago" } }),
+    prisma.mandir.findUnique({ where: { name: "Los Angeles" } }),
+    prisma.mandir.findUnique({ where: { name: "Chicago" } }),
   ]);
+
+  if (!laMandir || !chicagoMandir) {
+    throw new Error("Required BAPS mandirs Los Angeles and Chicago were not found after mandir import.");
+  }
 
   await prisma.airportMandirMapping.createMany({
     data: [

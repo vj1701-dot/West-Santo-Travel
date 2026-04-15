@@ -1,4 +1,5 @@
 import { createItinerary, createTrip, listItineraries } from "@west-santo/data";
+import { TransportTaskType } from "@prisma/client";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
@@ -17,21 +18,15 @@ const createTripSchema = z.object({
     .object({
       confirmationNumber: z.string().nullable().optional(),
       totalCost: z.number().nullable().optional(),
-      notes: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),
   accommodation: z
     .object({
-      mandirId: z.string().uuid(),
-      room: z.string().nullable().optional(),
-      checkInDate: z.string().nullable().optional(),
-      checkOutDate: z.string().nullable().optional(),
       notes: z.string().nullable().optional(),
     })
     .nullable()
     .optional(),
-  transportNotes: z.string().nullable().optional(),
   segments: z
     .array(
       z.object({
@@ -42,7 +37,16 @@ const createTripSchema = z.object({
         arrivalAirportId: z.string().uuid(),
         departureTimeLocal: z.string().min(1),
         arrivalTimeLocal: z.string().min(1),
-        notes: z.string().nullable().optional(),
+        transportEntries: z
+          .array(
+            z.object({
+              taskType: z.nativeEnum(TransportTaskType),
+              driverIds: z.array(z.string().uuid()).optional(),
+              notes: z.string().nullable().optional(),
+              scheduledTimeLocal: z.string().nullable().optional(),
+            }),
+          )
+          .optional(),
       }),
     )
     .min(1),
