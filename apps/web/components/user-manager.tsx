@@ -3,10 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
+import { AirportMultiSelect, type AirportChoice } from "./airport-autocomplete";
+
 type AirportRecord = {
   id: string;
   code: string;
   name: string;
+  city?: string | null;
+  country?: string | null;
 };
 
 type UserRecord = {
@@ -33,7 +37,19 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(users[0]?.id ?? null);
+  const [createAirportResetKey, setCreateAirportResetKey] = useState(0);
   const selectedUser = users.find((user) => user.id === selectedId) ?? null;
+  const airportChoices: AirportChoice[] = useMemo(
+    () =>
+      airports.map((airport) => ({
+        id: airport.id,
+        code: airport.code,
+        name: airport.name,
+        city: airport.city,
+        country: airport.country,
+      })),
+    [airports],
+  );
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -73,8 +89,22 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
       </div>
       {message ? <div className="compact-card"><p>{message}</p></div> : null}
 
-      <div className="manager-layout">
+      <div className="manager-layout manager-layout--balanced">
         <div className="table-panel stack">
+          <div className="manager-summary">
+            <div className="info-tile">
+              <span>Total users</span>
+              <strong>{users.length}</strong>
+            </div>
+            <div className="info-tile">
+              <span>Linked identities</span>
+              <strong>{users.filter((user) => user.identityLinkedAt).length}</strong>
+            </div>
+            <div className="info-tile">
+              <span>Airport admins/coordinators</span>
+              <strong>{users.filter((user) => user.airportIds.length > 0).length}</strong>
+            </div>
+          </div>
           <label className="field">
             <span>Search users</span>
             <input placeholder="Search by name, email, phone, or role" value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -125,10 +155,19 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 role: form.get("role"),
                 airportIds: readAirportIds(form),
               });
-              if (ok) event.currentTarget.reset();
+              if (ok) {
+                event.currentTarget.reset();
+                setCreateAirportResetKey((current) => current + 1);
+              }
             }}
           >
-            <h3>Grant access</h3>
+            <div className="manager-inspector-header">
+              <div>
+                <p className="eyebrow">New User</p>
+                <h3>Grant access</h3>
+              </div>
+              <p className="muted-inline">Provision login access, role, and airport permissions.</p>
+            </div>
             <label className="field"><span>First name</span><input name="firstName" required /></label>
             <label className="field"><span>Last name</span><input name="lastName" required /></label>
             <label className="field"><span>Email used for Google login</span><input name="email" required type="email" /></label>
@@ -141,19 +180,13 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 <option value="PASSENGER">Passenger</option>
               </select>
             </label>
-            <label className="field">
-              <span>Assigned airports</span>
-              <select multiple name="airportIds" size={Math.max(3, Math.min(6, airports.length))}>
-                {airports.map((airport) => (
-                  <option key={airport.id} value={airport.id}>{airport.code} - {airport.name}</option>
-                ))}
-              </select>
-            </label>
+            <AirportMultiSelect airports={airportChoices} key={createAirportResetKey} label="Assigned airports" name="airportIds" />
             <button disabled={isPending} type="submit">Create user</button>
           </form>
 
           {selectedUser ? (
             <form
+              key={selectedUser.id}
               className="stack"
               onSubmit={async (event) => {
                 event.preventDefault();
@@ -169,7 +202,13 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 });
               }}
             >
-              <h3>User details</h3>
+              <div className="manager-inspector-header">
+                <div>
+                  <p className="eyebrow">Selected User</p>
+                  <h3>{selectedUser.firstName} {selectedUser.lastName}</h3>
+                </div>
+                <p className="muted-inline">{selectedUser.role} access</p>
+              </div>
               <div className="info-grid">
                 <Info label="Identity status" value={selectedUser.identityLinkedAt ? "Linked" : "Pending first Google login"} />
                 <Info label="Last login" value={selectedUser.lastLoginAt ? new Date(selectedUser.lastLoginAt).toLocaleString() : "Never"} />
@@ -188,14 +227,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                   <option value="PASSENGER">Passenger</option>
                 </select>
               </label>
-              <label className="field">
-                <span>Assigned airports</span>
-                <select defaultValue={selectedUser.airportIds} multiple name="airportIds" size={Math.max(3, Math.min(6, airports.length))}>
-                  {airports.map((airport) => (
-                    <option key={airport.id} value={airport.id}>{airport.code} - {airport.name}</option>
-                  ))}
-                </select>
-              </label>
+              <AirportMultiSelect airports={airportChoices} label="Assigned airports" name="airportIds" selectedIds={selectedUser.airportIds} />
               <label className="checkbox"><input defaultChecked={selectedUser.isActive} name="isActive" type="checkbox" /> Active</label>
               <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                 <label className="field"><span>Telegram chat ID</span><input name="chatId" placeholder={selectedUser.telegramChatId ?? "Enter chat ID"} /></label>

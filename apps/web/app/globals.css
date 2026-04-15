@@ -483,6 +483,56 @@ button:active {
   gap: 1rem;
 }
 
+.manager-layout--balanced {
+  grid-template-columns: minmax(0, 1.45fr) minmax(340px, 0.95fr);
+}
+
+.manager-summary {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.manager-inspector-header {
+  display: grid;
+  gap: 0.35rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.trip-builder-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.trip-builder-sidebar {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.trip-summary-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(180deg, var(--indigo-50), white 60%);
+  box-shadow: var(--shadow-sm);
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.segment-card {
+  border-color: var(--slate-200);
+}
+
+.segment-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .table-panel,
 .drawer-panel {
   border: 1px solid var(--line);
@@ -615,6 +665,50 @@ button:active {
 .checkbox input {
   width: auto;
   min-height: auto;
+}
+
+.airport-combobox {
+  position: relative;
+}
+
+.airport-combobox__menu {
+  position: absolute;
+  z-index: 20;
+  inset: calc(100% + 0.35rem) 0 auto 0;
+}
+
+.airport-combobox__list {
+  margin: 0;
+  padding: 0.35rem;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: white;
+  box-shadow: var(--shadow-lg);
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.airport-combobox__option,
+.airport-combobox__empty {
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+}
+
+.airport-combobox__option {
+  cursor: pointer;
+}
+
+.airport-combobox__option--active,
+.airport-combobox__option:hover {
+  background: var(--indigo-50);
+  color: var(--indigo-700);
+}
+
+.airport-combobox__error {
+  color: var(--error);
+  font-size: 0.82rem;
 }
 
 .compact-card__top {
@@ -1004,8 +1098,24 @@ button:active {
     align-items: start;
   }
 
+  .trip-builder-layout {
+    grid-template-columns: minmax(0, 1.45fr) minmax(300px, 0.7fr);
+    align-items: start;
+  }
+
+  .trip-builder-sidebar {
+    position: sticky;
+    top: 1rem;
+  }
+
   .drawer-panel {
     position: sticky;
     top: 1rem;
+  }
+}
+
+@media (max-width: 959px) {
+  .manager-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

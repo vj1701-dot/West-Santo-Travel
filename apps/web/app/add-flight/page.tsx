@@ -25,8 +25,10 @@ export default async function AddFlightPage() {
       <TripBuilder
         airports={airports.map((airport) => ({
           id: airport.id,
-          label: airport.code,
-          detail: [airport.name, airport.city].filter(Boolean).join(" · "),
+          code: airport.code,
+          name: airport.name,
+          city: airport.city,
+          country: airport.country,
         }))}
         mandirs={mandirs.map((mandir) => ({ id: mandir.id, name: mandir.name }))}
         passengers={passengers.map((passenger) => ({

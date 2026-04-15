@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
+import { AirportAutocomplete, type AirportChoice } from "./airport-autocomplete";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "./accordion";
 
 type Option = {
@@ -21,18 +22,30 @@ type SegmentState = {
   airline: string;
   flightNumber: string;
   departureAirportId: string;
+  departureAirport: AirportChoice | null;
   arrivalAirportId: string;
+  arrivalAirport: AirportChoice | null;
   departureTimeLocal: string;
   arrivalTimeLocal: string;
   notes: string;
 };
 
+function generateSegmentId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID();
+  }
+
+  return `segment-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 const emptySegment = (): SegmentState => ({
-  id: crypto.randomUUID(),
+  id: generateSegmentId(),
   airline: "",
   flightNumber: "",
   departureAirportId: "",
+  departureAirport: null,
   arrivalAirportId: "",
+  arrivalAirport: null,
   departureTimeLocal: "",
   arrivalTimeLocal: "",
   notes: "",
@@ -44,7 +57,7 @@ export function TripBuilder({
   mandirs,
 }: {
   passengers: Option[];
-  airports: Option[];
+  airports: AirportChoice[];
   mandirs: MandirOption[];
 }) {
   const router = useRouter();
@@ -62,6 +75,19 @@ export function TripBuilder({
   const selectedPassengers = useMemo(
     () => passengers.filter((passenger) => selectedPassengerIds.includes(passenger.id)),
     [passengers, selectedPassengerIds],
+  );
+  const completedSegments = useMemo(
+    () =>
+      segments.filter(
+        (segment) =>
+          segment.airline &&
+          segment.flightNumber &&
+          segment.departureAirport &&
+          segment.arrivalAirport &&
+          segment.departureTimeLocal &&
+          segment.arrivalTimeLocal,
+      ).length,
+    [segments],
   );
 
   async function handleSubmit(formData: FormData) {
@@ -133,7 +159,7 @@ export function TripBuilder({
       ) : null}
 
       <form
-        className="stack"
+        className="trip-builder-layout"
         onSubmit={(event) => {
           event.preventDefault();
           if (selectedPassengerIds.length === 0) {
@@ -159,6 +185,7 @@ export function TripBuilder({
           void handleSubmit(new FormData(event.currentTarget));
         }}
       >
+        <div className="stack">
         <Accordion type="multiple" defaultValue={["passengers", "segments"]}>
           {/* Passenger Selection */}
           <AccordionItem value="passengers">
@@ -243,11 +270,14 @@ export function TripBuilder({
             <AccordionContent>
               <div className="stack">
                 {segments.map((segment, index) => (
-                  <article key={segment.id} className="compact-card" style={{ padding: "1rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-                      <h3 style={{ fontSize: "0.875rem", fontWeight: "600", color: "var(--slate-700)", margin: 0 }}>
-                        Segment {index + 1}
-                      </h3>
+                  <article key={segment.id} className="compact-card segment-card" style={{ padding: "1rem" }}>
+                    <div className="segment-card__header">
+                      <div>
+                        <p className="eyebrow">Segment {index + 1}</p>
+                        <h3 style={{ fontSize: "1rem", fontWeight: "600", color: "var(--slate-900)", margin: 0 }}>
+                          {segment.departureAirport?.code ?? "DEP"} {"→"} {segment.arrivalAirport?.code ?? "ARR"}
+                        </h3>
+                      </div>
                       {segments.length > 1 && (
                         <button
                           className="button-secondary"
@@ -283,25 +313,31 @@ export function TripBuilder({
                           placeholder="e.g. UA123"
                         />
                       </label>
-                      <AirportSelect
+                      <AirportAutocomplete
                         airports={airports}
                         label="Departure airport"
-                        value={segment.departureAirportId}
-                        onChange={(value) =>
+                        onSelect={(airport) =>
                           setSegments((current) =>
-                            current.map((item) => (item.id === segment.id ? { ...item, departureAirportId: value } : item)),
+                            current.map((item) =>
+                              item.id === segment.id
+                                ? { ...item, departureAirportId: airport.id, departureAirport: airport }
+                                : item,
+                            ),
                           )
                         }
+                        value={segment.departureAirport}
                       />
-                      <AirportSelect
+                      <AirportAutocomplete
                         airports={airports}
                         label="Arrival airport"
-                        value={segment.arrivalAirportId}
-                        onChange={(value) =>
+                        onSelect={(airport) =>
                           setSegments((current) =>
-                            current.map((item) => (item.id === segment.id ? { ...item, arrivalAirportId: value } : item)),
+                            current.map((item) =>
+                              item.id === segment.id ? { ...item, arrivalAirportId: airport.id, arrivalAirport: airport } : item,
+                            ),
                           )
                         }
+                        value={segment.arrivalAirport}
                       />
                       <label className="field">
                         <span>Departure time</span>
@@ -430,39 +466,53 @@ export function TripBuilder({
             </AccordionContent>
           </AccordionItem>
         </Accordion>
+        </div>
 
-        <div className="actions-row" style={{ marginTop: "1.5rem" }}>
+        <aside className="trip-builder-sidebar">
+          <div className="trip-summary-card">
+            <p className="eyebrow">Trip Summary</p>
+            <h3>Before you save</h3>
+            <div className="manager-summary">
+              <div className="info-tile">
+                <span>Passengers</span>
+                <strong>{selectedPassengerIds.length}</strong>
+              </div>
+              <div className="info-tile">
+                <span>Segments ready</span>
+                <strong>{completedSegments}/{segments.length}</strong>
+              </div>
+              <div className="info-tile">
+                <span>Transport watched</span>
+                <strong>{segments.filter((segment) => segment.departureAirportId || segment.arrivalAirportId).length}</strong>
+              </div>
+            </div>
+            <div className="stack stack--tight">
+              <div className="info-tile">
+                <span>Passengers selected</span>
+                <strong>{selectedPassengers.map((passenger) => passenger.label).join(", ") || "None selected"}</strong>
+              </div>
+              <div className="info-tile">
+                <span>Routes</span>
+                <strong>
+                  {segments
+                    .map((segment) =>
+                      segment.departureAirport?.code && segment.arrivalAirport?.code
+                        ? `${segment.departureAirport.code} → ${segment.arrivalAirport.code}`
+                        : "Route incomplete",
+                    )
+                    .join(" · ")}
+                </strong>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div className="actions-row" style={{ marginTop: "1.5rem", gridColumn: "1 / -1" }}>
           <button disabled={isPending} type="submit">
             {isPending ? "Saving..." : "Save trip"}
           </button>
         </div>
       </form>
     </section>
-  );
-}
-
-function AirportSelect({
-  airports,
-  label,
-  value,
-  onChange,
-}: {
-  airports: Option[];
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select airport</option>
-        {airports.map((airport) => (
-          <option key={airport.id} value={airport.id}>
-            {airport.label} {airport.detail ? `· ${airport.detail}` : ""}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

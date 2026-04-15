@@ -3,10 +3,14 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
+import { AirportMultiSelect, type AirportChoice } from "./airport-autocomplete";
+
 type AirportRecord = {
   id: string;
   code: string;
   name: string;
+  city?: string | null;
+  country?: string | null;
 };
 
 type DriverRecord = {
@@ -26,7 +30,19 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(drivers[0]?.id ?? null);
+  const [createAirportResetKey, setCreateAirportResetKey] = useState(0);
   const selectedDriver = drivers.find((driver) => driver.id === selectedId) ?? null;
+  const airportChoices: AirportChoice[] = useMemo(
+    () =>
+      airports.map((airport) => ({
+        id: airport.id,
+        code: airport.code,
+        name: airport.name,
+        city: airport.city,
+        country: airport.country,
+      })),
+    [airports],
+  );
 
   const filteredDrivers = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -68,8 +84,22 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
       </div>
       {message ? <div className="compact-card"><p>{message}</p></div> : null}
 
-      <div className="manager-layout">
+      <div className="manager-layout manager-layout--balanced">
         <div className="table-panel stack">
+          <div className="manager-summary">
+            <div className="info-tile">
+              <span>Total drivers</span>
+              <strong>{drivers.length}</strong>
+            </div>
+            <div className="info-tile">
+              <span>Telegram linked</span>
+              <strong>{drivers.filter((driver) => driver.telegramChatId).length}</strong>
+            </div>
+            <div className="info-tile">
+              <span>Airport coverage</span>
+              <strong>{new Set(drivers.flatMap((driver) => driver.airportIds)).size}</strong>
+            </div>
+          </div>
           <label className="field">
             <span>Search drivers</span>
             <input value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -113,26 +143,29 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
                 notes: form.get("notes") || null,
                 airportIds: readAirportIds(form),
               });
-              if (ok) event.currentTarget.reset();
+              if (ok) {
+                event.currentTarget.reset();
+                setCreateAirportResetKey((current) => current + 1);
+              }
             }}
           >
-            <h3>Add driver</h3>
+            <div className="manager-inspector-header">
+              <div>
+                <p className="eyebrow">New Driver</p>
+                <h3>Add driver</h3>
+              </div>
+              <p className="muted-inline">Create a transport contact and assign their airport coverage.</p>
+            </div>
             <label className="field"><span>Name</span><input name="name" required /></label>
             <label className="field"><span>Phone</span><input name="phone" /></label>
-            <label className="field">
-              <span>Assigned airports</span>
-              <select multiple name="airportIds" size={Math.max(3, Math.min(6, airports.length))}>
-                {airports.map((airport) => (
-                  <option key={airport.id} value={airport.id}>{airport.code} - {airport.name}</option>
-                ))}
-              </select>
-            </label>
+            <AirportMultiSelect airports={airportChoices} key={createAirportResetKey} label="Assigned airports" name="airportIds" />
             <label className="field"><span>Notes</span><textarea name="notes" rows={4} /></label>
             <button disabled={isPending} type="submit">Create driver</button>
           </form>
 
           {selectedDriver ? (
             <form
+              key={selectedDriver.id}
               className="stack"
               onSubmit={async (event) => {
                 event.preventDefault();
@@ -145,21 +178,22 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
                 });
               }}
             >
-              <h3>Driver details</h3>
+              <div className="manager-inspector-header">
+                <div>
+                  <p className="eyebrow">Selected Driver</p>
+                  <h3>{selectedDriver.name}</h3>
+                </div>
+                <p className="muted-inline">
+                  {selectedDriver.airportCodes.length > 0 ? `${selectedDriver.airportCodes.length} airport assignments` : "No airport assignments"}
+                </p>
+              </div>
               <div className="info-grid">
                 <Info label="Assigned airports" value={selectedDriver.airportCodes.join(", ") || "None"} />
                 <Info label="Telegram" value={selectedDriver.telegramChatId ?? "Not linked"} />
               </div>
               <label className="field"><span>Name</span><input defaultValue={selectedDriver.name} name="name" required /></label>
               <label className="field"><span>Phone</span><input defaultValue={selectedDriver.phone ?? ""} name="phone" /></label>
-              <label className="field">
-                <span>Assigned airports</span>
-                <select defaultValue={selectedDriver.airportIds} multiple name="airportIds" size={Math.max(3, Math.min(6, airports.length))}>
-                  {airports.map((airport) => (
-                    <option key={airport.id} value={airport.id}>{airport.code} - {airport.name}</option>
-                  ))}
-                </select>
-              </label>
+              <AirportMultiSelect airports={airportChoices} label="Assigned airports" name="airportIds" selectedIds={selectedDriver.airportIds} />
               <label className="field"><span>Notes</span><textarea defaultValue={selectedDriver.notes ?? ""} name="notes" rows={4} /></label>
               <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
                 <label className="field"><span>Telegram chat ID</span><input name="chatId" placeholder={selectedDriver.telegramChatId ?? "Enter chat ID"} /></label>

@@ -22,7 +22,13 @@ export default async function UsersPage() {
         tooltip="Manage staff user accounts with login access, roles, airport assignments, and Telegram linking"
       />
       <UserManager
-        airports={airports.map((airport) => ({ id: airport.id, code: airport.code, name: airport.name }))}
+        airports={airports.map((airport) => ({
+          id: airport.id,
+          code: airport.code,
+          name: airport.name,
+          city: airport.city,
+          country: airport.country,
+        }))}
         users={users.map((user) => ({
           id: user.id,
           firstName: user.firstName,
