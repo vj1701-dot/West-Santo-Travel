@@ -1018,10 +1018,54 @@ export async function listTransportTasks() {
       airport: true,
       mandir: true,
       itinerary: { include: { itineraryPassengers: { include: { passenger: true } } } },
-      flightSegment: true,
+      flightSegment: {
+        include: {
+          departureAirport: true,
+          arrivalAirport: true,
+        },
+      },
       drivers: { include: { driver: true } },
     },
   });
+}
+
+export async function listDriverTransportTasksByChatId(chatId: string) {
+  const driver = await prisma.driver.findUnique({
+    where: { telegramChatId: chatId },
+    select: { id: true, name: true },
+  });
+
+  if (!driver) {
+    return null;
+  }
+
+  const tasks = await prisma.transportTask.findMany({
+    where: {
+      drivers: {
+        some: {
+          driverId: driver.id,
+        },
+      },
+    },
+    orderBy: [{ status: "asc" }, { scheduledTimeLocal: "asc" }],
+    include: {
+      airport: true,
+      mandir: true,
+      itinerary: { include: { itineraryPassengers: { include: { passenger: true } } } },
+      flightSegment: {
+        include: {
+          departureAirport: true,
+          arrivalAirport: true,
+        },
+      },
+      drivers: { include: { driver: true } },
+    },
+  });
+
+  return {
+    driver,
+    tasks,
+  };
 }
 
 export async function listDrivers() {
@@ -1201,6 +1245,204 @@ export async function updateTransportTaskStatus(input: {
     });
 
     return updated;
+  });
+}
+
+export async function driverRespondToTransportTask(input: {
+  chatId: string;
+  taskId: string;
+  action: "ACCEPT" | "DECLINE" | "EN_ROUTE" | "PICKED_UP" | "DROPPED_OFF" | "COMPLETED";
+}) {
+  return prisma.$transaction(async (tx) => {
+    const driver = await tx.driver.findUnique({
+      where: { telegramChatId: input.chatId },
+    });
+
+    if (!driver) {
+      throw new Error("Driver is not linked to this Telegram chat.");
+    }
+
+    const task = await tx.transportTask.findFirst({
+      where: {
+        id: input.taskId,
+        drivers: {
+          some: {
+            driverId: driver.id,
+          },
+        },
+      },
+      include: {
+        airport: true,
+        mandir: true,
+        flightSegment: {
+          include: {
+            departureAirport: true,
+            arrivalAirport: true,
+          },
+        },
+        itinerary: {
+          include: {
+            itineraryPassengers: {
+              include: {
+                passenger: true,
+              },
+            },
+          },
+        },
+        drivers: {
+          include: {
+            driver: true,
+          },
+        },
+      },
+    });
+
+    if (!task) {
+      throw new Error("Transport task not found for this driver.");
+    }
+
+    if (input.action === "DECLINE") {
+      await tx.transportTaskDriver.deleteMany({
+        where: {
+          transportTaskId: input.taskId,
+          driverId: driver.id,
+        },
+      });
+
+      const remainingDriverCount = await tx.transportTaskDriver.count({
+        where: { transportTaskId: input.taskId },
+      });
+
+      const nextStatus = remainingDriverCount > 0 ? task.status : TransportTaskStatus.UNASSIGNED;
+
+      const updatedTask = await tx.transportTask.update({
+        where: { id: input.taskId },
+        data: { status: nextStatus },
+        include: {
+          airport: true,
+          mandir: true,
+          flightSegment: {
+            include: {
+              departureAirport: true,
+              arrivalAirport: true,
+            },
+          },
+          itinerary: {
+            include: {
+              itineraryPassengers: {
+                include: {
+                  passenger: true,
+                },
+              },
+            },
+          },
+          drivers: { include: { driver: true } },
+        },
+      });
+
+      await tx.transportTaskStatusHistory.create({
+        data: {
+          transportTaskId: input.taskId,
+          oldStatus: task.status,
+          newStatus: nextStatus,
+          changedByDriverId: driver.id,
+          source: AuditSource.BOT,
+          note: "Driver declined assignment in Telegram.",
+        },
+      });
+
+      await createAuditLog(tx, {
+        action: "TRANSPORT_TASK_DRIVER_DECLINED",
+        entityType: "TransportTask",
+        entityId: input.taskId,
+        source: AuditSource.BOT,
+        newValues: { driverId: driver.id, status: nextStatus },
+      });
+
+      return {
+        driver,
+        task: updatedTask,
+        message: remainingDriverCount > 0 ? "Assignment declined." : "Assignment declined. Task is now unassigned.",
+      };
+    }
+
+    if (input.action === "ACCEPT") {
+      await createAuditLog(tx, {
+        action: "TRANSPORT_TASK_DRIVER_ACCEPTED",
+        entityType: "TransportTask",
+        entityId: input.taskId,
+        source: AuditSource.BOT,
+        newValues: { driverId: driver.id, status: task.status },
+      });
+
+      return {
+        driver,
+        task,
+        message: "Assignment accepted.",
+      };
+    }
+
+    const actionStatusMap: Record<
+      Exclude<typeof input.action, "ACCEPT" | "DECLINE">,
+      TransportTaskStatus
+    > = {
+      EN_ROUTE: TransportTaskStatus.EN_ROUTE,
+      PICKED_UP: TransportTaskStatus.PICKED_UP,
+      DROPPED_OFF: TransportTaskStatus.DROPPED_OFF,
+      COMPLETED: TransportTaskStatus.COMPLETED,
+    };
+
+    const nextStatus = actionStatusMap[input.action];
+
+    const updatedTask = await tx.transportTask.update({
+      where: { id: input.taskId },
+      data: { status: nextStatus },
+      include: {
+        airport: true,
+        mandir: true,
+        flightSegment: {
+          include: {
+            departureAirport: true,
+            arrivalAirport: true,
+          },
+        },
+        itinerary: {
+          include: {
+            itineraryPassengers: {
+              include: {
+                passenger: true,
+              },
+            },
+          },
+        },
+        drivers: { include: { driver: true } },
+      },
+    });
+
+    await tx.transportTaskStatusHistory.create({
+      data: {
+        transportTaskId: input.taskId,
+        oldStatus: task.status,
+        newStatus: nextStatus,
+        changedByDriverId: driver.id,
+        source: AuditSource.BOT,
+        note: `Driver updated task to ${nextStatus}.`,
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "TRANSPORT_TASK_STATUS_UPDATED_BY_DRIVER",
+      entityType: "TransportTask",
+      entityId: input.taskId,
+      source: AuditSource.BOT,
+      newValues: { driverId: driver.id, oldStatus: task.status, newStatus: nextStatus },
+    });
+
+    return {
+      driver,
+      task: updatedTask,
+      message: `Status updated to ${nextStatus}.`,
+    };
   });
 }
 

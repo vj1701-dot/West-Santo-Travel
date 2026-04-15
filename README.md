@@ -106,10 +106,6 @@ Implemented now:
 
 Partially implemented or intentionally deferred:
 
-- Dedicated itinerary listing page; `/itineraries` currently redirects to `/add-flight`
-- Dedicated transport task board; `/transport-tasks` currently redirects to `/drivers`
-- Rich Telegram driver action flows such as accept/decline/status buttons are not yet in the bot code
-- Public submission review is implemented in the API, but there is no dedicated web review screen yet
 - AI chatbot functionality mentioned in older planning docs is not implemented in this repository
 
 ## Repository Structure
