@@ -11,3 +11,5 @@ coverage
 .cursor/mcp.json
 .vscode/mcp.json
 skills
+.vscode
+
