@@ -2,7 +2,7 @@ import { UserRole } from "@prisma/client";
 import { updateUser } from "@west-santo/data";
 import { z } from "zod";
 
-import { requireApiRole } from "@/lib/auth/guards";
+import { requireApiRoles } from "@/lib/auth/guards";
 import { fail, ok } from "@/lib/api/response";
 
 const updateUserSchema = z.object({
@@ -12,10 +12,11 @@ const updateUserSchema = z.object({
   lastName: z.string().min(1).optional(),
   role: z.nativeEnum(UserRole).optional(),
   isActive: z.boolean().optional(),
+  airportIds: z.array(z.string().uuid()).optional(),
 });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole("ADMIN");
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
   const { id } = await context.params;
   const json = await request.json();

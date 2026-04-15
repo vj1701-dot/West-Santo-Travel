@@ -2,7 +2,7 @@ import { UserRole } from "@prisma/client";
 import { createUser, listUsers } from "@west-santo/data";
 import { z } from "zod";
 
-import { requireApiRole } from "@/lib/auth/guards";
+import { requireApiRoles } from "@/lib/auth/guards";
 import { fail, ok } from "@/lib/api/response";
 
 const createUserSchema = z.object({
@@ -11,10 +11,11 @@ const createUserSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   role: z.nativeEnum(UserRole),
+  airportIds: z.array(z.string().uuid()).optional(),
 });
 
 export async function GET(request: Request) {
-  const auth = await requireApiRole("ADMIN");
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiRole("ADMIN");
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
   const json = await request.json();
   const parsed = createUserSchema.safeParse(json);

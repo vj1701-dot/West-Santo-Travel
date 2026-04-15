@@ -1,4 +1,4 @@
-import { prisma } from "@west-santo/data";
+import { evaluateReminderRules, prisma } from "@west-santo/data";
 
 const tickMs = Number(process.env.SCHEDULER_TICK_MS ?? 60000);
 
@@ -25,6 +25,7 @@ async function processReminderScan() {
   ]);
 
   console.log(`[scheduler] upcoming_tasks=${upcomingTasks} unassigned_24h=${unassignedTasks}`);
+  await evaluateReminderRules();
 }
 
 async function main() {

@@ -1,9 +1,9 @@
 import { PassengerType } from "@prisma/client";
-import { updatePassenger } from "@west-santo/data";
+import { getPassenger, updatePassenger } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
-import { requireApiRole } from "@/lib/auth/guards";
+import { requireApiRoles } from "@/lib/auth/guards";
 
 const updatePassengerSchema = z.object({
   firstName: z.string().min(1).optional(),
@@ -16,7 +16,7 @@ const updatePassengerSchema = z.object({
 });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole("ADMIN");
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
   const { id } = await context.params;
   const json = await request.json();
@@ -27,4 +27,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   return ok(await updatePassenger(id, parsed.data));
+}
+
+export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  if (auth instanceof Response) return auth;
+  const { id } = await context.params;
+  return ok(await getPassenger(id));
 }

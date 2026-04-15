@@ -80,11 +80,38 @@ enum NotificationType {
   REMINDER_24H
   REMINDER_2H
   FLIGHT_REMINDER
+  RULE_REMINDER
   UNASSIGNED_ALERT
   APPROVAL_REQUESTED
   APPROVAL_RESOLVED
   ASSIGNMENT_CHANGED
   ASSIGNMENT_CANCELLED
+}
+
+enum ReminderTrigger {
+  FLIGHT_DEPARTURE
+  BOOKING_CREATED
+  PICKUP_SCHEDULED
+  TRANSPORT_STATUS_CHANGED
+}
+
+enum ReminderAudience {
+  PASSENGER
+  DRIVER
+  COORDINATOR
+  ADMIN
+}
+
+enum ReminderChannel {
+  TELEGRAM
+  INTERNAL
+}
+
+enum ReminderRunStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
 }
 
 enum CsvImportStatus {
@@ -102,6 +129,11 @@ model User {
   lastName         String
   role             UserRole
   isActive         Boolean  @default(true)
+  accessProvisionedAt DateTime @default(now()) @db.Timestamptz(6)
+  identityProvider String?
+  identitySubject  String?
+  identityLinkedAt DateTime? @db.Timestamptz(6)
+  lastLoginAt      DateTime? @db.Timestamptz(6)
   telegramChatId   String?  @unique
   telegramUsername String?
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
@@ -124,6 +156,7 @@ model User {
   auditUserActor         AuditLog[]            @relation("AuditActorUser")
   csvImportJobs          CsvImportJob[]
   aiQueryLogs            AiQueryLog[]
+  createdReminderRules   ReminderRule[]
 
   @@index([phone])
 }
@@ -561,6 +594,46 @@ model NotificationLog {
 
   @@index([status])
   @@index([createdAt])
+}
+
+model ReminderRule {
+  id             String           @id @default(uuid()) @db.Uuid
+  name           String
+  isActive       Boolean          @default(true)
+  trigger        ReminderTrigger
+  audience       ReminderAudience
+  channel        ReminderChannel
+  offsetMinutes  Int              @default(0)
+  template       String
+  createdByUserId String          @db.Uuid
+  lastRunAt      DateTime?        @db.Timestamptz(6)
+  lastError      String?
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+
+  createdByUser  User             @relation(fields: [createdByUserId], references: [id])
+  runs           ReminderRun[]
+
+  @@index([isActive, trigger])
+}
+
+model ReminderRun {
+  id               String            @id @default(uuid()) @db.Uuid
+  reminderRuleId   String            @db.Uuid
+  entityType       String
+  entityId         String
+  recipientChatId  String?
+  notificationLogId String?         @unique @db.Uuid
+  scheduledFor     DateTime          @db.Timestamptz(6)
+  status           ReminderRunStatus @default(QUEUED)
+  errorMessage     String?
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(6)
+
+  reminderRule     ReminderRule      @relation(fields: [reminderRuleId], references: [id], onDelete: Cascade)
+
+  @@unique([reminderRuleId, entityType, entityId, scheduledFor])
+  @@index([status, scheduledFor])
 }
 
 model AuditLog {

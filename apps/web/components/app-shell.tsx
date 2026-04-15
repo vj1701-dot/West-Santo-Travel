@@ -8,19 +8,23 @@ import { LoginButton } from "@/components/login-button";
 import { LogoutButton } from "@/components/logout-button";
 
 const navItems = [
-  { href: "/", label: "Overview" },
-  { href: "/admin", label: "Admin" },
-  { href: "/itineraries", label: "Itineraries" },
-  { href: "/transport-tasks", label: "Transport" },
-  { href: "/approvals", label: "Approvals" },
-  { href: "/passengers", label: "Passengers" },
+  { href: "/", label: "Overview", roles: ["ADMIN", "COORDINATOR", "PASSENGER"] },
+  { href: "/add-flight", label: "Add Flight", roles: ["ADMIN", "COORDINATOR"] },
+  { href: "/passengers", label: "Passengers", roles: ["ADMIN", "COORDINATOR"] },
+  { href: "/drivers", label: "Drivers", roles: ["ADMIN", "COORDINATOR"] },
+  { href: "/users", label: "Users", roles: ["ADMIN", "COORDINATOR"] },
+  { href: "/reminders", label: "Reminders", roles: ["ADMIN", "COORDINATOR"] },
+  { href: "/admin", label: "Admin", roles: ["ADMIN"] },
 ];
 
 export function AppShell({
   children,
   currentUser,
-}: PropsWithChildren<{ currentUser?: { firstName: string; lastName: string; role: string } | null }>) {
+  effectiveRole,
+}: PropsWithChildren<{ currentUser?: { firstName: string; lastName: string; role: string } | null; effectiveRole?: string | null }>) {
   const pathname = usePathname();
+  const currentEffectiveRole = effectiveRole ?? currentUser?.role;
+  const visibleNavItems = navItems.filter((item) => !currentEffectiveRole || item.roles.includes(currentEffectiveRole));
 
   return (
     <div className="app-shell">
@@ -28,13 +32,15 @@ export function AppShell({
         <div className="brand-block">
           <div className="brand-mark">WRS</div>
           <div>
-            <p className="eyebrow">West Region Santos</p>
-            <h1>Flight management</h1>
+            <strong style={{ color: "white", fontSize: "1.125rem", display: "block" }}>West Region Santos</strong>
+            <p style={{ color: "var(--slate-400)", fontSize: "0.875rem", marginTop: "0.25rem" }}>
+              Flight Management
+            </p>
           </div>
         </div>
 
         <nav className="nav">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const active = pathname === item.href;
             return (
               <Link key={item.href} className={`nav-link ${active ? "nav-link--active" : ""}`} href={item.href}>
@@ -45,18 +51,43 @@ export function AppShell({
         </nav>
 
         <div className="sidebar-card">
-          <p className="eyebrow">Operating mode</p>
-          <strong>Telegram-first, web-readable</strong>
-          <p>Live operational data is sourced from the shared Prisma-backed service layer.</p>
-          {currentUser ? <p>{currentUser.firstName} {currentUser.lastName} · {currentUser.role}</p> : null}
-          {currentUser ? <LogoutButton /> : <LoginButton />}
+          <p className="eyebrow">Signed in as</p>
+          {currentUser ? (
+            <>
+              <strong style={{ marginTop: "0.25rem", display: "block" }}>
+                {currentUser.firstName} {currentUser.lastName}
+              </strong>
+              <p style={{ marginTop: "0.25rem", fontSize: "0.875rem" }}>
+                {currentEffectiveRole}
+                {currentEffectiveRole !== currentUser.role ? ` preview` : ""}
+              </p>
+              {currentUser.role === "ADMIN" ? (
+                <div className="preview-links">
+                  <Link className={`preview-link ${currentEffectiveRole === "ADMIN" ? "preview-link--active" : ""}`} href={pathname}>
+                    Admin
+                  </Link>
+                  <Link className={`preview-link ${currentEffectiveRole === "COORDINATOR" ? "preview-link--active" : ""}`} href={`${pathname}?previewRole=COORDINATOR`}>
+                    Coordinator
+                  </Link>
+                  <Link className={`preview-link ${currentEffectiveRole === "PASSENGER" ? "preview-link--active" : ""}`} href={`${pathname}?previewRole=PASSENGER`}>
+                    Passenger
+                  </Link>
+                </div>
+              ) : null}
+              <div style={{ marginTop: "0.75rem" }}>
+                <LogoutButton />
+              </div>
+            </>
+          ) : (
+            <LoginButton />
+          )}
         </div>
       </aside>
 
       <main className="content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">Mobile-first dashboard</p>
+            <p className="eyebrow">Operations Console</p>
             <h2>West Region Santos</h2>
           </div>
           <div className="row-meta">
@@ -66,7 +97,7 @@ export function AppShell({
         </header>
 
         <div className="mobile-nav">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const active = pathname === item.href;
             return (
               <Link key={item.href} className={`mobile-nav__item ${active ? "mobile-nav__item--active" : ""}`} href={item.href}>

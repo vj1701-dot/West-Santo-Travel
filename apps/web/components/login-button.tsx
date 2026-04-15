@@ -9,7 +9,7 @@ export function LoginButton() {
       onClick={() => signIn("keycloak", { callbackUrl: "/" })}
       type="button"
     >
-      Login
+      Continue With Google
     </button>
   );
 }

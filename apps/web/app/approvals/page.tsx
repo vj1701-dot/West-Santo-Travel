@@ -13,9 +13,8 @@ export default async function ApprovalsPage() {
   return (
     <AppShell currentUser={currentUser}>
       <PageHeader
-        eyebrow="Approvals"
-        title="Coordinator edits that wait for admin review"
-        description="Use this queue to inspect proposed changes, compare snapshots, and resolve pending work explicitly."
+        title="Approvals"
+        tooltip="Review and approve coordinator edits with change comparison and approval workflow"
       />
       <ApprovalReviewList approvals={approvals} canReview={currentUser.role === "ADMIN"} />
     </AppShell>

@@ -1,3 +1,11 @@
 npm-debug.log
 .env
 .DS_Store
+node_modules
+.next
+apps/web/.next
+apps/web/node_modules
+apps/bot/node_modules
+apps/scheduler/node_modules
+*.tsbuildinfo
+.DS_Store

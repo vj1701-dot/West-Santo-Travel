@@ -12,6 +12,11 @@ async function lookupLocalUser(email: string) {
   return findAuthorizedUserByEmail(email);
 }
 
+async function syncLoginIdentity(email: string, provider?: string | null, subject?: string | null) {
+  const { syncUserIdentityOnLogin } = await import("@west-santo/data");
+  return syncUserIdentityOnLogin({ email, provider, subject });
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   trustHost: true,
   secret: getEnv("AUTH_SECRET", "development-auth-secret"),
@@ -29,7 +34,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   callbacks: {
-    async signIn({ user }) {
+    async signIn({ user, account }) {
       const email = user.email?.toLowerCase();
 
       if (!email) {
@@ -41,6 +46,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!localUser || !localUser.isActive) {
         return "/access-denied";
       }
+
+      await syncLoginIdentity(email, account?.provider ?? "keycloak", account?.providerAccountId ?? null);
 
       return true;
     },
