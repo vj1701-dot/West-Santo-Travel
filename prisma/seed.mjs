@@ -6,6 +6,7 @@ import {
   TransportTaskType,
   UserRole,
 } from "@prisma/client";
+import { hashPassword } from "better-auth/crypto";
 import tzLookup from "tz-lookup";
 import { localDateTimeStringToDate, zonedLocalDateTimeToUtc } from "@west-santo/core";
 
@@ -15,6 +16,8 @@ const AIRPORT_IMPORT_URL =
   process.env.AIRPORT_IMPORT_URL ?? "https://davidmegginson.github.io/ourairports-data/airports.csv";
 const AIRPORT_IMPORT_CHUNK_SIZE = 1000;
 const MANDIR_IMPORT_ENABLED = process.env.MANDIR_IMPORT_ENABLED !== "false";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? "admin@westsanto.org";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const BAPS_MANDIR_URLS = [
   "https://www.baps.org/Global-Network/North-America/BAPS-North-America---All-Centers.aspx",
   "https://www.baps.org/Global-Network/UK-and-Europe.aspx",
@@ -254,13 +257,26 @@ async function main() {
 
   const admin = await prisma.user.create({
     data: {
-      email: "admin@westsanto.org",
+      email: ADMIN_EMAIL,
       phone: "5550001111",
       firstName: "Amit",
       lastName: "Patel",
       role: UserRole.ADMIN,
     },
   });
+
+  if (ADMIN_PASSWORD?.trim()) {
+    await prisma.account.create({
+      data: {
+        userId: admin.id,
+        providerId: "credential",
+        accountId: admin.id,
+        password: await hashPassword(ADMIN_PASSWORD),
+      },
+    });
+  } else {
+    console.warn("[seed] ADMIN_PASSWORD is not set; seeded admin will not have email/password sign-in.");
+  }
 
   const coordinator = await prisma.user.create({
     data: {

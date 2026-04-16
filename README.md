@@ -230,7 +230,7 @@ The bootstrap and seed flow creates a usable local sandbox:
 
 - airports: imported from OurAirports during seed/bootstrap
 - mandirs: imported from official BAPS global network pages during seed/bootstrap
-- local user `admin@westsanto.org` with role `ADMIN`
+- local user from `ADMIN_EMAIL` (default `admin@westsanto.org`) with role `ADMIN`
 - local user `coordinator@westsanto.org` with role `COORDINATOR`
 - passengers: two sample santos
 - drivers: one sample driver assigned to `LAX`
@@ -267,6 +267,7 @@ Minimum values to review in `.env`:
 - `BETTER_AUTH_SECRET`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD` for seeded admin credentials
 - `TELEGRAM_BOT_TOKEN` if you want a live bot
 - `AIRPORT_IMPORT_URL` if you want to override the default OurAirports feed during seed/bootstrap
 - `MANDIR_IMPORT_ENABLED` if you want to skip the BAPS mandir import during seed/bootstrap
@@ -303,7 +304,8 @@ Expected local endpoints:
 
 ### 4. First Login
 
-- the seed creates a local app admin at `admin@westsanto.org`
+- the seed creates a local app admin from `ADMIN_EMAIL` (default: `admin@westsanto.org`)
+- if `ADMIN_PASSWORD` is set, that admin can sign in with email/password
 - you can sign in with Google or email/password through Better Auth
 - users can also self-register and receive default `PASSENGER` access
 
