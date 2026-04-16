@@ -23,7 +23,7 @@ export default async function AddFlightPage() {
         tooltip="Create complete trip records with flight segments, passenger assignments, booking details, and accommodation"
       />
       <TripBuilder
-        drivers={drivers.map((driver) => ({
+        drivers={drivers.map((driver: typeof drivers[number]) => ({
           id: driver.id,
           name: driver.name,
           phone: driver.phone,
