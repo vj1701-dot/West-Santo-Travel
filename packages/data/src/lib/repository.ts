@@ -683,7 +683,7 @@ export async function syncUserIdentityOnLogin(input: {
       where: { id: user.id },
       data: {
         lastLoginAt: new Date(),
-        identityProvider: input.provider ?? user.identityProvider ?? "keycloak",
+        identityProvider: input.provider ?? user.identityProvider ?? "better-auth",
         identitySubject: input.subject ?? user.identitySubject,
         identityLinkedAt: user.identityLinkedAt ?? new Date(),
       },

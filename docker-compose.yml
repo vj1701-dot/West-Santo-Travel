@@ -15,65 +15,6 @@ services:
       timeout: 5s
       retries: 20
 
-  keycloak-db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: keycloak
-    ports:
-      - "5433:5432"
-    volumes:
-      - keycloak_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.1
-    depends_on:
-      keycloak-db:
-        condition: service_healthy
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
-      KC_HTTP_ENABLED: "true"
-      KC_PROXY_HEADERS: xforwarded
-      KC_HOSTNAME_STRICT: "false"
-    ports:
-      - "8081:8080"
-    command: start-dev
-
-  keycloak-setup:
-    image: quay.io/keycloak/keycloak:26.1
-    depends_on:
-      keycloak:
-        condition: service_started
-    environment:
-      KEYCLOAK_ADMIN_USER: ${KEYCLOAK_ADMIN_USER:-admin}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
-      KEYCLOAK_REALM: west-santo
-      KEYCLOAK_SERVER_URL: http://keycloak:8080
-      KEYCLOAK_BOOTSTRAP_MODE: ${KEYCLOAK_BOOTSTRAP_MODE:-development}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-west-santo-web}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-replace-with-keycloak-client-secret}
-      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
-      KEYCLOAK_DEV_LOGIN_EMAIL: ${KEYCLOAK_DEV_LOGIN_EMAIL:-admin@westsanto.org}
-      KEYCLOAK_DEV_LOGIN_PASSWORD: ${KEYCLOAK_DEV_LOGIN_PASSWORD:-change-me-local-dev-password}
-      KEYCLOAK_GOOGLE_CLIENT_ID: ${KEYCLOAK_GOOGLE_CLIENT_ID:-}
-      KEYCLOAK_GOOGLE_CLIENT_SECRET: ${KEYCLOAK_GOOGLE_CLIENT_SECRET:-}
-      KEYCLOAK_GOOGLE_HOSTED_DOMAIN: ${KEYCLOAK_GOOGLE_HOSTED_DOMAIN:-}
-    volumes:
-      - ./scripts/bootstrap-keycloak.sh:/bootstrap-keycloak.sh:ro
-    entrypoint: ["/bin/sh", "/bootstrap-keycloak.sh"]
-    restart: "no"
-
   bootstrap:
     build:
       context: .
@@ -100,11 +41,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
-      AUTH_SECRET: ${SESSION_SECRET:-replace-with-a-long-random-secret}
-      AUTH_URL: ${APP_BASE_URL:-http://localhost:3000}
-      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER_URL:-http://localhost:8081/realms/west-santo}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-west-santo-web}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-replace-with-keycloak-client-secret}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-replace-with-a-long-random-secret}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-replace-with-google-client-id}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-replace-with-google-client-secret}
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
       - "3000:3000"
@@ -139,4 +80,3 @@ services:
 
 volumes:
   postgres_data:
-  keycloak_postgres_data:

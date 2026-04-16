@@ -785,6 +785,58 @@ button:active {
   background: var(--indigo-600);
 }
 
+.auth-form-panel {
+  text-align: center;
+}
+
+.auth-form-panel .field span {
+  text-align: left;
+}
+
+.auth-form-panel .field input {
+  text-align: left;
+}
+
+.auth-button {
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--indigo-600);
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  transition: none;
+  transform: none;
+}
+
+.auth-button:hover,
+.auth-button:active {
+  background: var(--indigo-600);
+  transform: none;
+}
+
+.auth-button:disabled {
+  opacity: 0.75;
+  cursor: not-allowed;
+}
+
+.auth-button--google svg {
+  flex: 0 0 auto;
+}
+
+.auth-switch-link {
+  color: var(--indigo-600);
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .sidebar-card {
   border-radius: var(--radius-lg);
   padding: 1rem;

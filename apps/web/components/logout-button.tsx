@@ -1,12 +1,15 @@
 "use client";
 
-import { signOut } from "next-auth/react";
+import { authClient } from "@/lib/auth-client";
 
 export function LogoutButton() {
   return (
     <button
       className="pill"
-      onClick={() => signOut({ callbackUrl: "/access-denied" })}
+      onClick={async () => {
+        await authClient.signOut();
+        window.location.href = "/sign-in";
+      }}
       type="button"
     >
       Logout

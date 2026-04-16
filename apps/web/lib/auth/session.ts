@@ -1,9 +1,10 @@
 import "server-only";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 
-import { findAuthorizedUserByEmail, findAuthorizedUserById } from "@west-santo/data";
+import { findAuthorizedUserByEmail, findAuthorizedUserById, syncUserIdentityOnLogin } from "@west-santo/data";
 
 import { auth } from "@/auth";
 
@@ -12,7 +13,9 @@ const ACCESS_DENIED_MESSAGE = "Your account is not enabled for this application.
 export type AuthorizedUser = Awaited<ReturnType<typeof findAuthorizedUserById>>;
 
 async function resolveSessionUser() {
-  const session = await auth();
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
 
   if (!session?.user?.email) {
     return { hasSession: false, user: null };
@@ -22,11 +25,28 @@ async function resolveSessionUser() {
     const byId = await findAuthorizedUserById(session.user.id);
 
     if (byId) {
+      if (!byId.identityLinkedAt) {
+        const synced = await syncUserIdentityOnLogin({
+          email: byId.email,
+          provider: "better-auth",
+          subject: byId.id,
+        });
+        return { hasSession: true, user: synced ?? byId };
+      }
       return { hasSession: true, user: byId };
     }
   }
 
   const byEmail = await findAuthorizedUserByEmail(session.user.email);
+
+  if (byEmail && !byEmail.identityLinkedAt) {
+    const synced = await syncUserIdentityOnLogin({
+      email: byEmail.email,
+      provider: "better-auth",
+      subject: byEmail.id,
+    });
+    return { hasSession: true, user: synced ?? byEmail };
+  }
 
   return { hasSession: true, user: byEmail };
 }
