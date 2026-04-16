@@ -1,4 +1,4 @@
-import { updateDriver } from "@west-santo/data";
+import { disableDriver, updateDriver } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
@@ -23,4 +23,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   return ok(await updateDriver(id, parsed.data));
+}
+
+export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  if (auth instanceof Response) return auth;
+  const { id } = await context.params;
+  return ok(await disableDriver(id));
 }

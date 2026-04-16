@@ -101,7 +101,7 @@ Implemented now:
 - Docker Compose stack for web, bot, scheduler, database, and Keycloak
 - Add Flight trip editor with passenger autocomplete, airline autocomplete, per-segment pickup/dropoff entries, inline driver creation, and accommodation notes
 - Itinerary list redesign with edit flow at `/itineraries/[id]/edit`
-- Public submission intake endpoint and page at `/submit-flight`
+- Public submission intake endpoint and page at `/submission`
 - CSV exports for trips, passengers, drivers, and users
 - Reminder rule CRUD and scheduler evaluation loop
 - Telegram phone/contact linking and queued notification dispatch
@@ -154,9 +154,11 @@ Partially implemented or intentionally deferred:
 - `/drivers`: driver directory and airport assignment flow
 - `/users`: access provisioning and identity status
 - `/reminders`: reminder rule management
+- `/submission`: public guest submission form
+- `/submissions`: admin/coordinator submission review queue
+- `/submissions/[id]/edit`: complete a public submission and convert it into an itinerary
 - `/admin`: export console
 - `/approvals`: approval review list
-- `/submit-flight`: public guest submission form
 - `/access-denied`: authorization failure page
 
 ### API Surface
@@ -169,8 +171,8 @@ The web app exposes route handlers under `apps/web/app/api` for:
 - drivers
 - itineraries and itinerary segments
 - approvals and approval review
-- public submissions and submission review
-- transport task listing, assignment, and status updates
+- public submissions, submission review, and submission conversion
+- transport task listing, assignment, and status updates through APIs only
 - reminder rules
 - CSV exports
 - Telegram linking
@@ -231,8 +233,8 @@ This keeps airport-local intent intact while still enabling reliable background 
 
 The bootstrap and seed flow creates a usable local sandbox:
 
-- airports: `LAX`, `ORD`
-- mandirs: `LA Mandir`, `Chicago Mandir`
+- airports: imported from OurAirports during seed/bootstrap
+- mandirs: imported from official BAPS global network pages during seed/bootstrap
 - local user `admin@westsanto.org` with role `ADMIN`
 - local user `coordinator@westsanto.org` with role `COORDINATOR`
 - passengers: two sample santos
@@ -403,21 +405,21 @@ Admin CSV exports are available for:
 
 ### Public Submission Flow
 
-The public page at `/submit-flight` accepts:
+The public page at `/submission` accepts:
 
 - submitter name and phone
 - one or more passengers
 - one or more flight segments
 - optional notes
 
-Those submissions are stored for admin review and can be resolved as approved, rejected, or duplicate-flagged through the API.
+Those submissions are stored for admin/coordinator review. Staff then opens the submission in a full completion editor, adds booking/transport/accommodation details, and saves it into `/itineraries`. Reject and duplicate-flag actions remain available during review.
 
 ## Known Gaps And Next Useful Slices
 
 The most valuable next product slices, based on the codebase as it exists now, are:
 
-- dedicated admin UI for reviewing public submissions
-- dedicated itinerary list and transport task board
+- stronger submission review and duplicate-handling workflows
+- dedicated itinerary list polish and deeper scoped coordinator workflows
 - richer coordinator workflow around scoped visibility and editing
 - Telegram driver response actions for assignment acceptance and status updates
 - broader automated notification templates tied to more operational events

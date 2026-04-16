@@ -28,6 +28,7 @@ type AirportMultiSelectProps = {
   name: string;
   selectedIds?: string[];
   disabled?: boolean;
+  onChange?: (selectedIds: string[]) => void;
 };
 
 const MAX_RESULTS = 8;
@@ -219,7 +220,7 @@ export function AirportAutocomplete({
   );
 }
 
-export function AirportMultiSelect({ airports, label, name, selectedIds = [], disabled }: AirportMultiSelectProps) {
+export function AirportMultiSelect({ airports, label, name, selectedIds = [], disabled, onChange }: AirportMultiSelectProps) {
   const [selectedAirports, setSelectedAirports] = useState<AirportChoice[]>(() =>
     selectedIds.map((id) => airports.find((airport) => airport.id === id)).filter((airport): airport is AirportChoice => Boolean(airport)),
   );
@@ -244,7 +245,11 @@ export function AirportMultiSelect({ airports, label, name, selectedIds = [], di
           disabled={disabled}
           label={label}
           onSelect={(airport) =>
-            setSelectedAirports((current) => (current.some((item) => item.id === airport.id) ? current : [...current, airport]))
+            setSelectedAirports((current) => {
+              const next = current.some((item) => item.id === airport.id) ? current : [...current, airport];
+              onChange?.(next.map((item) => item.id));
+              return next;
+            })
           }
           placeholder="Add airport access"
           clearOnSelect
@@ -256,7 +261,13 @@ export function AirportMultiSelect({ airports, label, name, selectedIds = [], di
               <button
                 className="chip"
                 key={airport.id}
-                onClick={() => setSelectedAirports((current) => current.filter((item) => item.id !== airport.id))}
+                onClick={() =>
+                  setSelectedAirports((current) => {
+                    const next = current.filter((item) => item.id !== airport.id);
+                    onChange?.(next.map((item) => item.id));
+                    return next;
+                  })
+                }
                 type="button"
               >
                 {airport.code}

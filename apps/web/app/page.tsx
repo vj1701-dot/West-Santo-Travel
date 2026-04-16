@@ -18,6 +18,10 @@ function formatDateTime(value: Date | null | undefined) {
   }).format(value);
 }
 
+function formatAirportSummary(airport: { code: string; name: string; city: string | null | undefined }) {
+  return `${airport.code} - ${airport.name}${airport.city ? `, ${airport.city}` : ""}`;
+}
+
 export default async function OverviewPage({
   searchParams,
 }: {
@@ -80,26 +84,45 @@ export default async function OverviewPage({
             </div>
 
             <div className="grid gap-3" style={{ marginTop: "1rem" }}>
-              <InfoRow label="Airline" value={nextSegment?.airline ?? ""} />
-              <InfoRow label="Next departure" value={formatDateTime(nextSegment?.departureTimeLocal)} />
-              <InfoRow label="Passengers" value={itinerary.itineraryPassengers.map((item) => `${item.passenger.firstName} ${item.passenger.lastName}`).join(", ")} />
-              {itinerary.booking?.confirmationNumber ? <InfoRow label="Booking ID" value={itinerary.booking.confirmationNumber} /> : null}
-              {itinerary.booking?.totalCost ? <InfoRow label="Price" value={itinerary.booking.totalCost.toString()} /> : null}
-              {itinerary.accommodations.length > 0 && itinerary.accommodations.some((item) => item.notes || item.mandir) ? (
-                <InfoRow
-                  label="Accommodation"
-                  value={itinerary.accommodations.map((item) => item.notes || item.mandir?.name).filter(Boolean).join(" · ")}
-                />
-              ) : null}
-              {itinerary.transportTasks.length > 0 ? (
-                <InfoRow
-                  label="Transport"
-                  value={itinerary.transportTasks
-                    .map((task) => `${task.taskType}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || task.status}`)
-                    .join(" · ")}
-                />
-              ) : null}
-              {itinerary.notes ? <InfoRow label="Trip note" value={itinerary.notes} /> : null}
+              <div
+                style={{
+                  display: "grid",
+                  gap: "0.9rem",
+                  padding: "1rem",
+                  border: "1px solid var(--line)",
+                  borderRadius: "1rem",
+                  background: "var(--bg-soft)",
+                }}
+              >
+                <InfoRow label="Airline" value={nextSegment?.airline ?? ""} borderless />
+                {nextSegment ? (
+                  <InfoRow
+                    label="Departure"
+                    value={formatAirportSummary(nextSegment.departureAirport)}
+                    secondaryValue={formatDateTime(nextSegment.departureTimeLocal)}
+                    borderless
+                  />
+                ) : null}
+                {nextSegment ? (
+                  <InfoRow
+                    label="Arrival"
+                    value={formatAirportSummary(nextSegment.arrivalAirport)}
+                    secondaryValue={formatDateTime(nextSegment.arrivalTimeLocal)}
+                    borderless
+                  />
+                ) : null}
+                <InfoRow label="Passengers" value={itinerary.itineraryPassengers.map((item) => `${item.passenger.firstName} ${item.passenger.lastName}`).join(", ")} borderless />
+                {itinerary.transportTasks.length > 0 ? (
+                  <InfoRow
+                    label="Transport"
+                    value={itinerary.transportTasks
+                      .map((task) => `${task.taskType}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || task.status}`)
+                      .join(" · ")}
+                    borderless
+                  />
+                ) : null}
+                {itinerary.notes ? <InfoRow label="Trip note" value={itinerary.notes} borderless /> : null}
+              </div>
             </div>
           </article>
         ))}
@@ -108,7 +131,17 @@ export default async function OverviewPage({
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  label,
+  value,
+  secondaryValue,
+  borderless = false,
+}: {
+  label: string;
+  value: string;
+  secondaryValue?: string;
+  borderless?: boolean;
+}) {
   if (!value.trim()) {
     return null;
   }
@@ -118,14 +151,15 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       style={{
         display: "grid",
         gap: "0.2rem",
-        paddingBottom: "0.75rem",
-        borderBottom: "1px solid var(--line)",
+        paddingBottom: borderless ? 0 : "0.75rem",
+        borderBottom: borderless ? "none" : "1px solid var(--line)",
       }}
-    >
+      >
       <span style={{ fontSize: "0.75rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "var(--slate-500)" }}>
         {label}
       </span>
       <strong style={{ fontSize: "0.95rem", color: "var(--slate-800)" }}>{value}</strong>
+      {secondaryValue ? <span style={{ color: "var(--slate-500)" }}>{secondaryValue}</span> : null}
     </div>
   );
 }

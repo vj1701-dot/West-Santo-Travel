@@ -171,6 +171,7 @@ model Passenger {
   telegramChatId         String?
   telegramUsername       String?
   passengerType          PassengerType
+  isActive               Boolean  @default(true)
   linkedPrimaryPassengerId String? @db.Uuid
   notes                  String?
   createdAt              DateTime @default(now()) @db.Timestamptz(6)
@@ -185,6 +186,7 @@ model Passenger {
   auditPassengerActor    AuditLog[] @relation("AuditActorPassenger")
 
   @@index([lastName, firstName])
+  @@index([isActive])
   @@index([legalName])
   @@index([phone])
 }
@@ -304,6 +306,7 @@ model Driver {
   phone            String?
   telegramChatId   String?  @unique
   telegramUsername String?
+  isActive         Boolean  @default(true)
   notes            String?
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
@@ -315,6 +318,7 @@ model Driver {
   notificationRecipients NotificationLog[]
   auditDriverActor       AuditLog[] @relation("AuditActorDriver")
 
+  @@index([isActive])
   @@index([phone])
 }
 

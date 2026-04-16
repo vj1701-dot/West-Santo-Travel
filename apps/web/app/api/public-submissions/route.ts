@@ -3,7 +3,7 @@ import { createPublicSubmission, listPublicSubmissions } from "@west-santo/data"
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
-import { requireApiRole } from "@/lib/auth/guards";
+import { requireApiRoles } from "@/lib/auth/guards";
 
 const passengerSchema = z.object({
   firstName: z.string().min(1),
@@ -53,7 +53,7 @@ function normalizeSubmission(input: z.infer<typeof createSubmissionSchema>) {
 }
 
 export async function GET(request: Request) {
-  const auth = await requireApiRole("ADMIN");
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
 
   const { searchParams } = new URL(request.url);

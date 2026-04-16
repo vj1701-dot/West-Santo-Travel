@@ -673,7 +673,7 @@ button:active {
 
 .airport-combobox__menu {
   position: absolute;
-  z-index: 20;
+  z-index: 120;
   inset: calc(100% + 0.35rem) 0 auto 0;
 }
 
@@ -892,7 +892,7 @@ button:active {
   border: 1px solid var(--slate-200);
   border-radius: var(--radius-lg);
   background: white;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .accordion-trigger {

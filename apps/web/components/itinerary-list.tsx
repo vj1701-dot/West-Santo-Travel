@@ -23,8 +23,8 @@ type ItineraryRecord = {
     flightNumber: string;
     departureTimeLocal: Date;
     arrivalTimeLocal: Date;
-    departureAirport: { code: string };
-    arrivalAirport: { code: string };
+    departureAirport: { code: string; name: string; city: string | null };
+    arrivalAirport: { code: string; name: string; city: string | null };
   }>;
   transportTasks: Array<{
     id: string;
@@ -35,10 +35,6 @@ type ItineraryRecord = {
     drivers: Array<{ driver: { name: string } }>;
     notes: string | null;
   }>;
-  booking: {
-    confirmationNumber: string | null;
-    totalCost: { toString(): string } | null;
-  } | null;
   accommodations: Array<{
     mandir: { name: string } | null;
     notes: string | null;
@@ -57,6 +53,10 @@ function formatDateTime(value: Date) {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+function formatAirportSummary(airport: { code: string; name: string; city: string | null }) {
+  return `${airport.code} - ${airport.name}${airport.city ? `, ${airport.city}` : ""}`;
 }
 
 export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRecord[]; role: string }) {
@@ -93,7 +93,7 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
                       <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold ${brand.accentClassName}`}>
                         {brand.code}
                       </div>
-                      <div className="stack--tight">
+                      <div style={{ display: "grid", gap: "0.35rem" }}>
                         <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
                           {itinerary.flightSegments.map((segment) => `${segment.departureAirport.code} → ${segment.arrivalAirport.code}`).join(" · ")}
                         </h3>
@@ -115,32 +115,33 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-                    <div className="stack--tight">
+                    <div style={{ display: "grid", gap: "0.85rem" }}>
                       {itinerary.flightSegments.map((segment) => (
                         <div key={segment.id} className="rounded-xl border border-line bg-slate-50 p-4">
-                          <div className="row-card__title">
-                            <div>
-                              <strong style={{ fontSize: "1rem", color: "var(--slate-900)" }}>{segment.flightNumber}</strong>
-                              <p style={{ margin: "0.2rem 0 0", color: "var(--slate-500)" }}>{segment.airline}</p>
+                          <div style={{ display: "grid", gap: "1rem" }}>
+                            <div className="row-card__title">
+                              <div>
+                                <strong style={{ fontSize: "1rem", color: "var(--slate-900)" }}>{segment.flightNumber}</strong>
+                                <p style={{ margin: "0.2rem 0 0", color: "var(--slate-500)" }}>{segment.airline}</p>
+                              </div>
                             </div>
-                            <span style={{ fontSize: "0.875rem", color: "var(--slate-600)" }}>
-                              {formatDateTime(segment.departureTimeLocal)}
-                            </span>
-                          </div>
-                          <div className="row-meta" style={{ marginTop: "0.5rem" }}>
-                            <span>{segment.departureAirport.code}</span>
-                            <span>→</span>
-                            <span>{segment.arrivalAirport.code}</span>
-                            <span>{formatDateTime(segment.arrivalTimeLocal)}</span>
+                            <DetailRow
+                              label="Departure"
+                              value={formatAirportSummary(segment.departureAirport)}
+                              secondaryValue={formatDateTime(segment.departureTimeLocal)}
+                            />
+                            <DetailRow
+                              label="Arrival"
+                              value={formatAirportSummary(segment.arrivalAirport)}
+                              secondaryValue={formatDateTime(segment.arrivalTimeLocal)}
+                            />
                           </div>
                         </div>
                       ))}
                     </div>
 
-                    <div className="stack--tight">
+                    <div style={{ display: "grid", gap: "0.75rem" }}>
                       <DetailRow label="Passengers" value={passengerNames.join(", ")} />
-                      {itinerary.booking?.confirmationNumber ? <DetailRow label="Booking ID" value={itinerary.booking.confirmationNumber} /> : null}
-                      {itinerary.booking?.totalCost ? <DetailRow label="Total Price" value={itinerary.booking.totalCost.toString()} /> : null}
                       {pickupTasks.length > 0 ? (
                         <DetailRow
                           label="Pickup"
@@ -170,7 +171,7 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value, secondaryValue }: { label: string; value: string; secondaryValue?: string }) {
   if (!value.trim()) {
     return null;
   }
@@ -178,7 +179,10 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-line bg-slate-50 p-4">
       <p className="eyebrow" style={{ marginBottom: "0.35rem" }}>{label}</p>
-      <p style={{ color: "var(--slate-700)" }}>{value}</p>
+      <p style={{ color: "var(--slate-700)", margin: 0 }}>{value}</p>
+      {secondaryValue ? (
+        <p style={{ color: "var(--slate-500)", marginTop: "0.35rem" }}>{secondaryValue}</p>
+      ) : null}
     </div>
   );
 }

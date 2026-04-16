@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
@@ -58,7 +59,7 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
     return submissions.filter((submission) => submission.status === statusFilter);
   }, [submissions, statusFilter]);
 
-  async function reviewSubmission(id: string, status: "APPROVED" | "REJECTED" | "DUPLICATE_FLAGGED", reviewNote: string) {
+  async function reviewSubmission(id: string, status: "REJECTED" | "DUPLICATE_FLAGGED", reviewNote: string) {
     const response = await fetch(`/api/public-submissions/${id}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -99,8 +100,8 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
         const payload = ((submission.normalizedPayload ?? submission.rawPayload) ?? {}) as ParsedSubmissionPayload;
         return (
           <article key={submission.id} className="trip-card">
-            <div className="row-card__title">
-              <div className="stack--tight">
+              <div className="row-card__title">
+                <div style={{ display: "grid", gap: "0.35rem" }}>
                 <h3>{payload.submitterName ?? "Unknown submitter"}</h3>
                 <div className="row-meta">
                   <span>{payload.submitterPhone ?? "No phone"}</span>
@@ -170,7 +171,7 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
                 onSubmit={async (event) => {
                   event.preventDefault();
                   const form = new FormData(event.currentTarget);
-                  const status = String(form.get("status") ?? "") as "APPROVED" | "REJECTED" | "DUPLICATE_FLAGGED";
+                  const status = String(form.get("status") ?? "") as "REJECTED" | "DUPLICATE_FLAGGED";
                   const reviewNote = String(form.get("reviewNote") ?? "");
 
                   try {
@@ -181,7 +182,9 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
                 }}
               >
                 <input name="reviewNote" placeholder="Review note" />
-                <button disabled={isPending} name="status" type="submit" value="APPROVED">Approve</button>
+                <Link className="button-secondary" href={`/submissions/${submission.id}/edit`}>
+                  Complete in editor
+                </Link>
                 <button disabled={isPending} name="status" type="submit" value="REJECTED">Reject</button>
                 <button disabled={isPending} name="status" type="submit" value="DUPLICATE_FLAGGED">Flag duplicate</button>
               </form>

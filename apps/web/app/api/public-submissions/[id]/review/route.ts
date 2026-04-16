@@ -2,7 +2,7 @@ import { reviewPublicSubmission } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
-import { requireApiRole } from "@/lib/auth/guards";
+import { requireApiRoles } from "@/lib/auth/guards";
 
 const reviewSchema = z.object({
   status: z.enum(["APPROVED", "REJECTED", "DUPLICATE_FLAGGED"]),
@@ -10,7 +10,7 @@ const reviewSchema = z.object({
 });
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRole("ADMIN");
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
 
   const { id } = await context.params;

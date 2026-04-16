@@ -28,3 +28,10 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   return ok(await updateUser(id, parsed.data));
 }
+
+export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  if (auth instanceof Response) return auth;
+  const { id } = await context.params;
+  return ok(await updateUser(id, { isActive: false }));
+}

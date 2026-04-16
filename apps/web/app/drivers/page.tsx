@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { DriverManager } from "@/components/driver-manager";
-import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +16,6 @@ export default async function DriversPage() {
 
   return (
     <AppShell currentUser={currentUser}>
-      <PageHeader
-        title="Drivers"
-        tooltip="Manage driver directory with airport assignments and Telegram contact linking"
-      />
       <DriverManager
         airports={airports.map((airport) => ({ id: airport.id, code: airport.code, name: airport.name }))}
         drivers={drivers.map((driver) => ({

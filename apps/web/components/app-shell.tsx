@@ -11,12 +11,11 @@ const navItems = [
   { href: "/", label: "Overview", roles: ["ADMIN", "COORDINATOR", "PASSENGER"] },
   { href: "/add-flight", label: "Add Flight", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/itineraries", label: "Itineraries", roles: ["ADMIN", "COORDINATOR", "PASSENGER"] },
-  { href: "/transport-tasks", label: "Transport", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/passengers", label: "Passengers", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/drivers", label: "Drivers", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/users", label: "Users", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/reminders", label: "Reminders", roles: ["ADMIN", "COORDINATOR"] },
-  { href: "/submissions", label: "Submissions", roles: ["ADMIN"] },
+  { href: "/submissions", label: "Submissions", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/admin", label: "Admin", roles: ["ADMIN"] },
 ];
 

@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { AirportMultiSelect, type AirportChoice } from "./airport-autocomplete";
 
@@ -24,14 +24,44 @@ type DriverRecord = {
   airportCodes: string[];
 };
 
+type FormState = {
+  name: string;
+  phone: string;
+  notes: string;
+  airportIds: string[];
+  chatId: string;
+  telegramUsername: string;
+};
+
+const emptyForm: FormState = {
+  name: "",
+  phone: "",
+  notes: "",
+  airportIds: [],
+  chatId: "",
+  telegramUsername: "",
+};
+
+function toFormState(driver: DriverRecord): FormState {
+  return {
+    name: driver.name,
+    phone: driver.phone ?? "",
+    notes: driver.notes ?? "",
+    airportIds: driver.airportIds,
+    chatId: "",
+    telegramUsername: driver.telegramUsername ?? "",
+  };
+}
+
 export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; airports: AirportRecord[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(drivers[0]?.id ?? null);
-  const [createAirportResetKey, setCreateAirportResetKey] = useState(0);
-  const selectedDriver = drivers.find((driver) => driver.id === selectedId) ?? null;
+  const [panelMode, setPanelMode] = useState<"create" | "edit" | null>(null);
+  const [editingDriverId, setEditingDriverId] = useState<string | null>(null);
+  const [formState, setFormState] = useState<FormState>(emptyForm);
+
   const airportChoices: AirportChoice[] = useMemo(
     () =>
       airports.map((airport) => ({
@@ -48,9 +78,21 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
     const query = search.trim().toLowerCase();
     if (!query) return drivers;
     return drivers.filter((driver) =>
-      [driver.name, driver.phone ?? "", driver.notes ?? "", driver.airportCodes.join(" ")].join(" ").toLowerCase().includes(query),
+      [driver.name, driver.phone ?? "", driver.notes ?? "", driver.airportCodes.join(" ")]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
     );
   }, [drivers, search]);
+
+  const editingDriver =
+    panelMode === "edit" && editingDriverId
+      ? drivers.find((driver) => driver.id === editingDriverId) ?? null
+      : null;
+
+  function updateField<Key extends keyof FormState>(key: Key, value: FormState[Key]) {
+    setFormState((current) => ({ ...current, [key]: value }));
+  }
 
   async function submitJson(url: string, method: string, body: unknown) {
     const response = await fetch(url, {
@@ -70,172 +112,241 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
     return true;
   }
 
-  function readAirportIds(form: FormData) {
-    return form.getAll("airportIds").map(String).filter(Boolean);
+  function closePanel() {
+    setPanelMode(null);
+    setEditingDriverId(null);
+    setFormState(emptyForm);
+  }
+
+  async function handleCreateSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const ok = await submitJson("/api/drivers", "POST", {
+      name: formState.name,
+      phone: formState.phone || null,
+      notes: formState.notes || null,
+      airportIds: formState.airportIds,
+    });
+
+    if (ok) {
+      closePanel();
+    }
+  }
+
+  async function handleEditSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingDriver) return;
+
+    await submitJson(`/api/drivers/${editingDriver.id}`, "PATCH", {
+      name: formState.name,
+      phone: formState.phone || null,
+      notes: formState.notes || null,
+      airportIds: formState.airportIds,
+    });
+  }
+
+  async function handleTelegramLink() {
+    if (!editingDriver) return;
+    if (!formState.chatId.trim()) {
+      setMessage("Enter a chat ID to link Telegram.");
+      return;
+    }
+
+    await submitJson("/api/telegram-links", "POST", {
+      entityType: "DRIVER",
+      entityId: editingDriver.id,
+      chatId: formState.chatId.trim(),
+      telegramUsername: formState.telegramUsername.trim() || null,
+    });
+  }
+
+  async function handleDelete(driver: DriverRecord) {
+    if (!window.confirm(`Disable driver ${driver.name}?`)) {
+      return;
+    }
+
+    const response = await fetch(`/api/drivers/${driver.id}`, { method: "DELETE" });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setMessage(result.error?.message ?? "Unable to disable driver.");
+      return;
+    }
+
+    if (editingDriverId === driver.id) {
+      closePanel();
+    }
+    setMessage("Driver disabled.");
+    startTransition(() => router.refresh());
   }
 
   return (
     <section className="panel stack">
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Drivers</p>
-          <h2>Airport assignment and transport coverage</h2>
+      {message ? (
+        <div className="compact-card">
+          <p>{message}</p>
         </div>
-      </div>
-      {message ? <div className="compact-card"><p>{message}</p></div> : null}
+      ) : null}
 
-      <div className="manager-layout manager-layout--balanced">
-        <div className="table-panel stack">
-          <div className="manager-summary">
-            <div className="info-tile">
-              <span>Total drivers</span>
-              <strong>{drivers.length}</strong>
-            </div>
-            <div className="info-tile">
-              <span>Telegram linked</span>
-              <strong>{drivers.filter((driver) => driver.telegramChatId).length}</strong>
-            </div>
-            <div className="info-tile">
-              <span>Airport coverage</span>
-              <strong>{new Set(drivers.flatMap((driver) => driver.airportIds)).size}</strong>
-            </div>
+      <div className="row-card__title" style={{ alignItems: "end" }}>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Search drivers</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, phone, or airport" />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setPanelMode("create");
+            setEditingDriverId(null);
+            setFormState(emptyForm);
+          }}
+        >
+          Add Driver
+        </button>
+      </div>
+
+      {panelMode === "create" ? (
+        <form className="compact-card stack" onSubmit={handleCreateSubmit}>
+          <div className="row-card__title">
+            <h3 style={{ margin: 0 }}>Add Driver</h3>
+            <button className="button-secondary" type="button" onClick={closePanel}>
+              Cancel
+            </button>
           </div>
-          <label className="field">
-            <span>Search drivers</span>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} />
-          </label>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>Driver</th>
-                <th>Airports</th>
-                <th>Telegram</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredDrivers.map((driver) => (
-                <tr
-                  key={driver.id}
-                  className={selectedId === driver.id ? "data-table__row--active" : ""}
-                  onClick={() => setSelectedId(driver.id)}
-                >
-                  <td>
-                    <strong>{driver.name}</strong>
-                    <div className="muted-inline">{driver.phone ?? "No phone"}</div>
-                  </td>
-                  <td>{driver.airportCodes.join(", ") || "None"}</td>
-                  <td>{driver.telegramChatId ? "Linked" : "Pending"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+          <DriverFields airportChoices={airportChoices} formState={formState} onChange={updateField} />
+          <div className="actions-row" style={{ marginTop: 0 }}>
+            <button disabled={isPending} type="submit">
+              {isPending ? "Saving..." : "Create driver"}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
-        <div className="drawer-panel stack">
-          <form
-            className="stack"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              const ok = await submitJson("/api/drivers", "POST", {
-                name: form.get("name"),
-                phone: form.get("phone") || null,
-                notes: form.get("notes") || null,
-                airportIds: readAirportIds(form),
-              });
-              if (ok) {
-                event.currentTarget.reset();
-                setCreateAirportResetKey((current) => current + 1);
-              }
-            }}
-          >
-            <div className="manager-inspector-header">
-              <div>
-                <p className="eyebrow">New Driver</p>
-                <h3>Add driver</h3>
-              </div>
-              <p className="muted-inline">Create a transport contact and assign their airport coverage.</p>
+      {panelMode === "edit" && editingDriver ? (
+        <form className="compact-card stack" onSubmit={handleEditSubmit}>
+          <div className="row-card__title">
+            <div>
+              <h3 style={{ margin: 0 }}>Edit {editingDriver.name}</h3>
+              <p className="notes" style={{ marginTop: "0.35rem" }}>
+                Airports: {editingDriver.airportCodes.join(", ") || "None"} · Telegram: {editingDriver.telegramChatId ?? "Not linked"}
+              </p>
             </div>
-            <label className="field"><span>Name</span><input name="name" required /></label>
-            <label className="field"><span>Phone</span><input name="phone" /></label>
-            <AirportMultiSelect airports={airportChoices} key={createAirportResetKey} label="Assigned airports" name="airportIds" />
-            <label className="field"><span>Notes</span><textarea name="notes" rows={4} /></label>
-            <button disabled={isPending} type="submit">Create driver</button>
-          </form>
+            <button className="button-secondary" type="button" onClick={closePanel}>
+              Cancel
+            </button>
+          </div>
+          <DriverFields airportChoices={airportChoices} formState={formState} onChange={updateField} />
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <label className="field">
+              <span>Telegram chat ID</span>
+              <input
+                placeholder={editingDriver.telegramChatId ?? "Enter chat ID"}
+                value={formState.chatId}
+                onChange={(event) => updateField("chatId", event.target.value)}
+              />
+            </label>
+            <label className="field">
+              <span>Telegram username</span>
+              <input
+                value={formState.telegramUsername}
+                onChange={(event) => updateField("telegramUsername", event.target.value)}
+              />
+            </label>
+            <button className="button-secondary" type="button" onClick={() => void handleTelegramLink()}>
+              Link Telegram
+            </button>
+          </div>
+          <div className="actions-row" style={{ marginTop: 0 }}>
+            <button disabled={isPending} type="submit">
+              {isPending ? "Saving..." : "Save driver"}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
-          {selectedDriver ? (
-            <form
-              key={selectedDriver.id}
-              className="stack"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const form = new FormData(event.currentTarget);
-                await submitJson(`/api/drivers/${selectedDriver.id}`, "PATCH", {
-                  name: form.get("name"),
-                  phone: form.get("phone") || null,
-                  notes: form.get("notes") || null,
-                  airportIds: readAirportIds(form),
-                });
-              }}
-            >
-              <div className="manager-inspector-header">
-                <div>
-                  <p className="eyebrow">Selected Driver</p>
-                  <h3>{selectedDriver.name}</h3>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Driver</th>
+            <th>Airports</th>
+            <th>Telegram</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredDrivers.map((driver) => (
+            <tr key={driver.id}>
+              <td>
+                <strong>{driver.name}</strong>
+                <div className="muted-inline">{driver.phone ?? "No phone"}</div>
+              </td>
+              <td>{driver.airportCodes.join(", ") || "None"}</td>
+              <td>{driver.telegramChatId ? "Linked" : "Pending"}</td>
+              <td>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => {
+                      if (!window.confirm(`Open edit form for ${driver.name}?`)) {
+                        return;
+                      }
+                      setPanelMode("edit");
+                      setEditingDriverId(driver.id);
+                      setFormState(toFormState(driver));
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button className="button-secondary" type="button" onClick={() => void handleDelete(driver)}>
+                    Delete
+                  </button>
                 </div>
-                <p className="muted-inline">
-                  {selectedDriver.airportCodes.length > 0 ? `${selectedDriver.airportCodes.length} airport assignments` : "No airport assignments"}
-                </p>
-              </div>
-              <div className="info-grid">
-                <Info label="Assigned airports" value={selectedDriver.airportCodes.join(", ") || "None"} />
-                <Info label="Telegram" value={selectedDriver.telegramChatId ?? "Not linked"} />
-              </div>
-              <label className="field"><span>Name</span><input defaultValue={selectedDriver.name} name="name" required /></label>
-              <label className="field"><span>Phone</span><input defaultValue={selectedDriver.phone ?? ""} name="phone" /></label>
-              <AirportMultiSelect airports={airportChoices} label="Assigned airports" name="airportIds" selectedIds={selectedDriver.airportIds} />
-              <label className="field"><span>Notes</span><textarea defaultValue={selectedDriver.notes ?? ""} name="notes" rows={4} /></label>
-              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                <label className="field"><span>Telegram chat ID</span><input name="chatId" placeholder={selectedDriver.telegramChatId ?? "Enter chat ID"} /></label>
-                <label className="field"><span>Telegram username</span><input defaultValue={selectedDriver.telegramUsername ?? ""} name="telegramUsername" /></label>
-                <button
-                  className="button-secondary"
-                  disabled={isPending}
-                  type="button"
-                  onClick={async (event) => {
-                    const formElement = event.currentTarget.form;
-                    if (!formElement) return;
-                    const form = new FormData(formElement);
-                    const chatId = String(form.get("chatId") ?? "").trim();
-                    if (!chatId) {
-                      setMessage("Enter a chat ID to link Telegram.");
-                      return;
-                    }
-                    await submitJson("/api/telegram-links", "POST", {
-                      entityType: "DRIVER",
-                      entityId: selectedDriver.id,
-                      chatId,
-                      telegramUsername: String(form.get("telegramUsername") ?? "").trim() || null,
-                    });
-                  }}
-                >
-                  Link Telegram
-                </button>
-              </div>
-              <button disabled={isPending} type="submit">Save driver</button>
-            </form>
+              </td>
+            </tr>
+          ))}
+          {filteredDrivers.length === 0 ? (
+            <tr>
+              <td colSpan={4}>No drivers found.</td>
+            </tr>
           ) : null}
-        </div>
-      </div>
+        </tbody>
+      </table>
     </section>
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function DriverFields({
+  airportChoices,
+  formState,
+  onChange,
+}: {
+  airportChoices: AirportChoice[];
+  formState: FormState;
+  onChange: <Key extends keyof FormState>(key: Key, value: FormState[Key]) => void;
+}) {
   return (
-    <div className="info-tile">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="field">
+          <span>Name</span>
+          <input value={formState.name} onChange={(event) => onChange("name", event.target.value)} required />
+        </label>
+        <label className="field">
+          <span>Phone</span>
+          <input value={formState.phone} onChange={(event) => onChange("phone", event.target.value)} />
+        </label>
+      </div>
+      <AirportMultiSelect
+        airports={airportChoices}
+        label="Assigned airports"
+        name="airportIds"
+        selectedIds={formState.airportIds}
+        onChange={(airportIds) => onChange("airportIds", airportIds)}
+      />
+      <label className="field">
+        <span>Notes</span>
+        <textarea rows={4} value={formState.notes} onChange={(event) => onChange("notes", event.target.value)} />
+      </label>
+    </>
   );
 }

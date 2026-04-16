@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { AirportMultiSelect, type AirportChoice } from "./airport-autocomplete";
 
@@ -31,14 +31,53 @@ type UserRecord = {
   linkedPassengerName?: string | null;
 };
 
+type FormState = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  role: "ADMIN" | "COORDINATOR" | "PASSENGER";
+  airportIds: string[];
+  isActive: boolean;
+  chatId: string;
+  telegramUsername: string;
+};
+
+const emptyForm: FormState = {
+  firstName: "",
+  lastName: "",
+  email: "",
+  phone: "",
+  role: "COORDINATOR",
+  airportIds: [],
+  isActive: true,
+  chatId: "",
+  telegramUsername: "",
+};
+
+function toFormState(user: UserRecord): FormState {
+  return {
+    firstName: user.firstName,
+    lastName: user.lastName,
+    email: user.email,
+    phone: user.phone ?? "",
+    role: user.role,
+    airportIds: user.airportIds,
+    isActive: user.isActive,
+    chatId: "",
+    telegramUsername: user.telegramUsername ?? "",
+  };
+}
+
 export function UserManager({ users, airports }: { users: UserRecord[]; airports: AirportRecord[] }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
-  const [selectedId, setSelectedId] = useState<string | null>(users[0]?.id ?? null);
-  const [createAirportResetKey, setCreateAirportResetKey] = useState(0);
-  const selectedUser = users.find((user) => user.id === selectedId) ?? null;
+  const [panelMode, setPanelMode] = useState<"create" | "edit" | null>(null);
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [formState, setFormState] = useState<FormState>(emptyForm);
+
   const airportChoices: AirportChoice[] = useMemo(
     () =>
       airports.map((airport) => ({
@@ -59,6 +98,13 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     );
   }, [users, search]);
 
+  const editingUser =
+    panelMode === "edit" && editingUserId ? users.find((user) => user.id === editingUserId) ?? null : null;
+
+  function updateField<Key extends keyof FormState>(key: Key, value: FormState[Key]) {
+    setFormState((current) => ({ ...current, [key]: value }));
+  }
+
   async function submitJson(url: string, method: string, body: unknown) {
     const response = await fetch(url, {
       method,
@@ -77,199 +123,285 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     return true;
   }
 
-  const readAirportIds = (form: FormData) => form.getAll("airportIds").map(String).filter(Boolean);
+  function closePanel() {
+    setPanelMode(null);
+    setEditingUserId(null);
+    setFormState(emptyForm);
+  }
+
+  async function handleCreateSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const ok = await submitJson("/api/users", "POST", {
+      firstName: formState.firstName,
+      lastName: formState.lastName,
+      email: formState.email,
+      phone: formState.phone || null,
+      role: formState.role,
+      airportIds: formState.airportIds,
+    });
+
+    if (ok) {
+      closePanel();
+    }
+  }
+
+  async function handleEditSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingUser) return;
+
+    await submitJson(`/api/users/${editingUser.id}`, "PATCH", {
+      firstName: formState.firstName,
+      lastName: formState.lastName,
+      email: formState.email,
+      phone: formState.phone || null,
+      role: formState.role,
+      airportIds: formState.airportIds,
+      isActive: formState.isActive,
+    });
+  }
+
+  async function handleTelegramLink() {
+    if (!editingUser) return;
+    if (!formState.chatId.trim()) {
+      setMessage("Enter a chat ID to link Telegram.");
+      return;
+    }
+
+    await submitJson("/api/telegram-links", "POST", {
+      entityType: "USER",
+      entityId: editingUser.id,
+      chatId: formState.chatId.trim(),
+      telegramUsername: formState.telegramUsername.trim() || null,
+    });
+  }
+
+  async function handleDelete(user: UserRecord) {
+    if (!window.confirm(`Disable user ${user.firstName} ${user.lastName}?`)) {
+      return;
+    }
+
+    const response = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setMessage(result.error?.message ?? "Unable to disable user.");
+      return;
+    }
+
+    if (editingUserId === user.id) {
+      closePanel();
+    }
+    setMessage("User disabled.");
+    startTransition(() => router.refresh());
+  }
 
   return (
     <section className="panel stack">
-      <div className="panel-head">
-        <div>
-          <p className="eyebrow">Users</p>
-          <h2>Provision app access by email</h2>
+      {message ? (
+        <div className="compact-card">
+          <p>{message}</p>
         </div>
-      </div>
-      {message ? <div className="compact-card"><p>{message}</p></div> : null}
+      ) : null}
 
-      <div className="manager-layout manager-layout--balanced">
-        <div className="table-panel stack">
-          <div className="manager-summary">
-            <div className="info-tile">
-              <span>Total users</span>
-              <strong>{users.length}</strong>
-            </div>
-            <div className="info-tile">
-              <span>Linked identities</span>
-              <strong>{users.filter((user) => user.identityLinkedAt).length}</strong>
-            </div>
-            <div className="info-tile">
-              <span>Airport admins/coordinators</span>
-              <strong>{users.filter((user) => user.airportIds.length > 0).length}</strong>
-            </div>
+      <div className="row-card__title" style={{ alignItems: "end" }}>
+        <label className="field" style={{ flex: 1 }}>
+          <span>Search users</span>
+          <input
+            placeholder="Search by name, email, phone, or role"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            setPanelMode("create");
+            setEditingUserId(null);
+            setFormState(emptyForm);
+          }}
+        >
+          Add User
+        </button>
+      </div>
+
+      {panelMode === "create" ? (
+        <form className="compact-card stack" onSubmit={handleCreateSubmit}>
+          <div className="row-card__title">
+            <h3 style={{ margin: 0 }}>Add User</h3>
+            <button className="button-secondary" type="button" onClick={closePanel}>
+              Cancel
+            </button>
           </div>
-          <label className="field">
-            <span>Search users</span>
-            <input placeholder="Search by name, email, phone, or role" value={search} onChange={(event) => setSearch(event.target.value)} />
-          </label>
+          <UserFields airportChoices={airportChoices} formState={formState} onChange={updateField} includeActive={false} />
+          <div className="actions-row" style={{ marginTop: 0 }}>
+            <button disabled={isPending} type="submit">
+              {isPending ? "Saving..." : "Create user"}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>User</th>
-                <th>Role</th>
-                <th>Airports</th>
-                <th>Identity</th>
-                <th>Last login</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredUsers.map((user) => (
-                <tr
-                  key={user.id}
-                  className={selectedId === user.id ? "data-table__row--active" : ""}
-                  onClick={() => setSelectedId(user.id)}
-                >
-                  <td>
-                    <strong>{user.firstName} {user.lastName}</strong>
-                    <div className="muted-inline">{user.email}</div>
-                  </td>
-                  <td>{user.role}</td>
-                  <td>{user.airportCodes.join(", ") || "None"}</td>
-                  <td>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</td>
-                  <td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "Never"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="drawer-panel stack">
-          <form
-            className="stack"
-            onSubmit={async (event) => {
-              event.preventDefault();
-              const form = new FormData(event.currentTarget);
-              const ok = await submitJson("/api/users", "POST", {
-                firstName: form.get("firstName"),
-                lastName: form.get("lastName"),
-                email: form.get("email"),
-                phone: form.get("phone") || null,
-                role: form.get("role"),
-                airportIds: readAirportIds(form),
-              });
-              if (ok) {
-                event.currentTarget.reset();
-                setCreateAirportResetKey((current) => current + 1);
-              }
-            }}
-          >
-            <div className="manager-inspector-header">
-              <div>
-                <p className="eyebrow">New User</p>
-                <h3>Grant access</h3>
-              </div>
-              <p className="muted-inline">Provision login access, role, and airport permissions.</p>
+      {panelMode === "edit" && editingUser ? (
+        <form className="compact-card stack" onSubmit={handleEditSubmit}>
+          <div className="row-card__title">
+            <div>
+              <h3 style={{ margin: 0 }}>
+                Edit {editingUser.firstName} {editingUser.lastName}
+              </h3>
+              <p className="notes" style={{ marginTop: "0.35rem" }}>
+                Identity: {editingUser.identityLinkedAt ? editingUser.identityProvider ?? "Linked" : "Pending first login"} · Passenger link:{" "}
+                {editingUser.linkedPassengerName ?? "Not linked"}
+              </p>
             </div>
-            <label className="field"><span>First name</span><input name="firstName" required /></label>
-            <label className="field"><span>Last name</span><input name="lastName" required /></label>
-            <label className="field"><span>Email used for Google login</span><input name="email" required type="email" /></label>
-            <label className="field"><span>Phone</span><input name="phone" /></label>
+            <button className="button-secondary" type="button" onClick={closePanel}>
+              Cancel
+            </button>
+          </div>
+          <UserFields airportChoices={airportChoices} formState={formState} onChange={updateField} includeActive />
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
             <label className="field">
-              <span>Role</span>
-              <select defaultValue="COORDINATOR" name="role">
-                <option value="ADMIN">Admin</option>
-                <option value="COORDINATOR">Coordinator</option>
-                <option value="PASSENGER">Passenger</option>
-              </select>
+              <span>Telegram chat ID</span>
+              <input
+                placeholder={editingUser.telegramChatId ?? "Enter chat ID"}
+                value={formState.chatId}
+                onChange={(event) => updateField("chatId", event.target.value)}
+              />
             </label>
-            <AirportMultiSelect airports={airportChoices} key={createAirportResetKey} label="Assigned airports" name="airportIds" />
-            <button disabled={isPending} type="submit">Create user</button>
-          </form>
+            <label className="field">
+              <span>Telegram username</span>
+              <input
+                value={formState.telegramUsername}
+                onChange={(event) => updateField("telegramUsername", event.target.value)}
+              />
+            </label>
+            <button className="button-secondary" type="button" onClick={() => void handleTelegramLink()}>
+              Link Telegram
+            </button>
+          </div>
+          <div className="actions-row" style={{ marginTop: 0 }}>
+            <button disabled={isPending} type="submit">
+              {isPending ? "Saving..." : "Save user"}
+            </button>
+          </div>
+        </form>
+      ) : null}
 
-          {selectedUser ? (
-            <form
-              key={selectedUser.id}
-              className="stack"
-              onSubmit={async (event) => {
-                event.preventDefault();
-                const form = new FormData(event.currentTarget);
-                await submitJson(`/api/users/${selectedUser.id}`, "PATCH", {
-                  firstName: form.get("firstName"),
-                  lastName: form.get("lastName"),
-                  email: form.get("email"),
-                  phone: form.get("phone") || null,
-                  role: form.get("role"),
-                  airportIds: readAirportIds(form),
-                  isActive: form.get("isActive") === "on",
-                });
-              }}
-            >
-              <div className="manager-inspector-header">
-                <div>
-                  <p className="eyebrow">Selected User</p>
-                  <h3>{selectedUser.firstName} {selectedUser.lastName}</h3>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Role</th>
+            <th>Airports</th>
+            <th>Identity</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredUsers.map((user) => (
+            <tr key={user.id}>
+              <td>
+                <strong>
+                  {user.firstName} {user.lastName}
+                </strong>
+                <div className="muted-inline">{user.email}</div>
+              </td>
+              <td>{user.role}</td>
+              <td>{user.airportCodes.join(", ") || "None"}</td>
+              <td>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</td>
+              <td>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => {
+                      if (!window.confirm(`Open edit form for ${user.firstName} ${user.lastName}?`)) {
+                        return;
+                      }
+                      setPanelMode("edit");
+                      setEditingUserId(user.id);
+                      setFormState(toFormState(user));
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button className="button-secondary" type="button" onClick={() => void handleDelete(user)}>
+                    Delete
+                  </button>
                 </div>
-                <p className="muted-inline">{selectedUser.role} access</p>
-              </div>
-              <div className="info-grid">
-                <Info label="Identity status" value={selectedUser.identityLinkedAt ? "Linked" : "Pending first Google login"} />
-                <Info label="Last login" value={selectedUser.lastLoginAt ? new Date(selectedUser.lastLoginAt).toLocaleString() : "Never"} />
-                <Info label="Passenger link" value={selectedUser.linkedPassengerName ?? "Not linked"} />
-                <Info label="Telegram" value={selectedUser.telegramChatId ?? "Not linked"} />
-              </div>
-              <label className="field"><span>First name</span><input defaultValue={selectedUser.firstName} name="firstName" required /></label>
-              <label className="field"><span>Last name</span><input defaultValue={selectedUser.lastName} name="lastName" required /></label>
-              <label className="field"><span>Email</span><input defaultValue={selectedUser.email} name="email" required type="email" /></label>
-              <label className="field"><span>Phone</span><input defaultValue={selectedUser.phone ?? ""} name="phone" /></label>
-              <label className="field">
-                <span>Role</span>
-                <select defaultValue={selectedUser.role} name="role">
-                  <option value="ADMIN">Admin</option>
-                  <option value="COORDINATOR">Coordinator</option>
-                  <option value="PASSENGER">Passenger</option>
-                </select>
-              </label>
-              <AirportMultiSelect airports={airportChoices} label="Assigned airports" name="airportIds" selectedIds={selectedUser.airportIds} />
-              <label className="checkbox"><input defaultChecked={selectedUser.isActive} name="isActive" type="checkbox" /> Active</label>
-              <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-                <label className="field"><span>Telegram chat ID</span><input name="chatId" placeholder={selectedUser.telegramChatId ?? "Enter chat ID"} /></label>
-                <label className="field"><span>Telegram username</span><input defaultValue={selectedUser.telegramUsername ?? ""} name="telegramUsername" /></label>
-                <button
-                  className="button-secondary"
-                  disabled={isPending}
-                  type="button"
-                  onClick={async (event) => {
-                    const formElement = event.currentTarget.form;
-                    if (!formElement) return;
-                    const form = new FormData(formElement);
-                    const chatId = String(form.get("chatId") ?? "").trim();
-                    if (!chatId) {
-                      setMessage("Enter a chat ID to link Telegram.");
-                      return;
-                    }
-                    await submitJson("/api/telegram-links", "POST", {
-                      entityType: "USER",
-                      entityId: selectedUser.id,
-                      chatId,
-                      telegramUsername: String(form.get("telegramUsername") ?? "").trim() || null,
-                    });
-                  }}
-                >
-                  Link Telegram
-                </button>
-              </div>
-              <button disabled={isPending} type="submit">Save user</button>
-            </form>
+              </td>
+            </tr>
+          ))}
+          {filteredUsers.length === 0 ? (
+            <tr>
+              <td colSpan={5}>No users found.</td>
+            </tr>
           ) : null}
-        </div>
-      </div>
+        </tbody>
+      </table>
     </section>
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
+function UserFields({
+  airportChoices,
+  formState,
+  onChange,
+  includeActive,
+}: {
+  airportChoices: AirportChoice[];
+  formState: FormState;
+  onChange: <Key extends keyof FormState>(key: Key, value: FormState[Key]) => void;
+  includeActive: boolean;
+}) {
   return (
-    <div className="info-tile">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </div>
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="field">
+          <span>First name</span>
+          <input value={formState.firstName} onChange={(event) => onChange("firstName", event.target.value)} required />
+        </label>
+        <label className="field">
+          <span>Last name</span>
+          <input value={formState.lastName} onChange={(event) => onChange("lastName", event.target.value)} required />
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="field">
+          <span>Email used for login</span>
+          <input type="email" value={formState.email} onChange={(event) => onChange("email", event.target.value)} required />
+        </label>
+        <label className="field">
+          <span>Phone</span>
+          <input value={formState.phone} onChange={(event) => onChange("phone", event.target.value)} />
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="field">
+          <span>Role</span>
+          <select value={formState.role} onChange={(event) => onChange("role", event.target.value as FormState["role"])}>
+            <option value="ADMIN">Admin</option>
+            <option value="COORDINATOR">Coordinator</option>
+            <option value="PASSENGER">Passenger</option>
+          </select>
+        </label>
+        {includeActive ? (
+          <label className="checkbox" style={{ alignSelf: "end" }}>
+            <input
+              checked={formState.isActive}
+              onChange={(event) => onChange("isActive", event.target.checked)}
+              type="checkbox"
+            />{" "}
+            Active
+          </label>
+        ) : null}
+      </div>
+      <AirportMultiSelect
+        airports={airportChoices}
+        label="Assigned airports"
+        name="airportIds"
+        selectedIds={formState.airportIds}
+        onChange={(airportIds) => onChange("airportIds", airportIds)}
+      />
+    </>
   );
 }

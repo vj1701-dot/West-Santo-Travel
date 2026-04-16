@@ -2,7 +2,6 @@ import { listPassengers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { PageHeader } from "@/components/page-header";
 import { PassengerManager } from "@/components/passenger-manager";
 import { requireUser } from "@/lib/auth/session";
 
@@ -17,10 +16,6 @@ export default async function PassengersPage() {
 
   return (
     <AppShell currentUser={currentUser}>
-      <PageHeader
-        title="Passengers"
-        tooltip="Manage passenger roster with contact information, notes, dietary restrictions, and Telegram linking"
-      />
       <PassengerManager
         passengers={passengers.map((passenger) => ({
           id: passenger.id,

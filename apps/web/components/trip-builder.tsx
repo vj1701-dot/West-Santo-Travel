@@ -318,17 +318,31 @@ export function TripBuilder({
                   value={passengerQuery}
                 />
                 {selectedPassengers.length > 0 ? (
-                  <div className="chip-row">
-                    {selectedPassengers.map((passenger) => (
-                      <button
-                        key={passenger.id}
-                        className="chip"
-                        type="button"
-                        onClick={() => setSelectedPassengerIds((current) => current.filter((id) => id !== passenger.id))}
-                      >
-                        {passenger.label}
-                      </button>
-                    ))}
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "0.6rem",
+                      padding: "0.85rem 1rem",
+                      border: "1px solid var(--line)",
+                      borderRadius: "0.9rem",
+                      background: "var(--bg-soft)",
+                    }}
+                  >
+                    <p className="eyebrow" style={{ margin: 0 }}>
+                      Selected passengers
+                    </p>
+                    <div className="chip-row">
+                      {selectedPassengers.map((passenger) => (
+                        <button
+                          key={passenger.id}
+                          className="chip"
+                          type="button"
+                          onClick={() => setSelectedPassengerIds((current) => current.filter((id) => id !== passenger.id))}
+                        >
+                          {passenger.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : null}
               </div>

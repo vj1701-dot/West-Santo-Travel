@@ -1,5 +1,5 @@
 import { PassengerType } from "@prisma/client";
-import { getPassenger, updatePassenger } from "@west-santo/data";
+import { disablePassenger, getPassenger, updatePassenger } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
@@ -34,4 +34,11 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
   if (auth instanceof Response) return auth;
   const { id } = await context.params;
   return ok(await getPassenger(id));
+}
+
+export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  if (auth instanceof Response) return auth;
+  const { id } = await context.params;
+  return ok(await disablePassenger(id));
 }

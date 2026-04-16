@@ -39,6 +39,9 @@ type FlightSegmentInput = {
 };
 
 type PublicSubmissionPayload = {
+  submitterName?: string | null;
+  submitterPhone?: string | null;
+  notes?: string | null;
   passengers?: Array<{
     firstName: string;
     lastName: string;
@@ -447,17 +450,20 @@ export async function getDashboardSnapshot(role?: string | null) {
   };
 }
 
-export async function listPassengers(search?: string) {
+export async function listPassengers(search?: string, options?: { includeInactive?: boolean }) {
   return prisma.passenger.findMany({
-    where: search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...(options?.includeInactive ? {} : { isActive: true }),
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            ],
+          }
+        : {}),
+    },
     include: {
       itineraryPassengers: true,
     },
@@ -483,6 +489,7 @@ export async function updatePassenger(
     email?: string | null;
     phone?: string | null;
     passengerType?: Prisma.PassengerUpdateInput["passengerType"];
+    isActive?: boolean;
     notes?: string | null;
   },
 ) {
@@ -495,17 +502,27 @@ export async function updatePassenger(
   });
 }
 
-export async function listUsers(search?: string) {
+export async function disablePassenger(id: string) {
+  return prisma.passenger.update({
+    where: { id },
+    data: { isActive: false },
+  });
+}
+
+export async function listUsers(search?: string, options?: { includeInactive?: boolean }) {
   return prisma.user.findMany({
-    where: search
-      ? {
-          OR: [
-            { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          ],
-        }
-      : undefined,
+    where: {
+      ...(options?.includeInactive ? {} : { isActive: true }),
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            ],
+          }
+        : {}),
+    },
     include: {
       adminAirports: { include: { airport: true } },
       coordinatorAirports: { include: { airport: true } },
@@ -1248,8 +1265,9 @@ export async function listDriverTransportTasksByChatId(chatId: string) {
   };
 }
 
-export async function listDrivers() {
+export async function listDrivers(options?: { includeInactive?: boolean }) {
   return prisma.driver.findMany({
+    where: options?.includeInactive ? undefined : { isActive: true },
     orderBy: { name: "asc" },
     include: {
       driverAirports: {
@@ -1295,6 +1313,7 @@ export async function updateDriver(
     name?: string;
     phone?: string | null;
     notes?: string | null;
+    isActive?: boolean;
     airportIds?: string[];
   },
 ) {
@@ -1304,6 +1323,7 @@ export async function updateDriver(
       data: {
         name: input.name,
         phone: input.phone === undefined ? undefined : normalizeOptionalPhone(input.phone),
+        isActive: input.isActive,
         notes: input.notes,
       },
     });
@@ -1323,6 +1343,13 @@ export async function updateDriver(
         driverAirports: { include: { airport: true } },
       },
     });
+  });
+}
+
+export async function disableDriver(id: string) {
+  return prisma.driver.update({
+    where: { id },
+    data: { isActive: false },
   });
 }
 
@@ -1777,6 +1804,16 @@ export async function listPublicSubmissions(status?: SubmissionStatus) {
   });
 }
 
+export async function getPublicSubmission(id: string) {
+  return prisma.publicSubmission.findUnique({
+    where: { id },
+    include: {
+      reviewedByUser: true,
+      itinerary: true,
+    },
+  });
+}
+
 export async function reviewPublicSubmission(input: {
   id: string;
   status: "APPROVED" | "REJECTED" | "DUPLICATE_FLAGGED";
@@ -1794,19 +1831,6 @@ export async function reviewPublicSubmission(input: {
 
     if (submission.status !== SubmissionStatus.PENDING) {
       throw new Error("Public submission has already been reviewed.");
-    }
-
-    let itineraryId: string | null = null;
-
-    if (input.status === SubmissionStatus.APPROVED) {
-      const itinerary = await createItineraryFromSubmission(tx, {
-        submissionId: input.id,
-        normalizedPayload: (submission.normalizedPayload ?? submission.rawPayload) as PublicSubmissionPayload,
-        reviewedByUserId: input.reviewedByUserId,
-        notes: input.reviewNote ?? submission.notes ?? null,
-      });
-
-      itineraryId = itinerary.id;
     }
 
     const reviewedSubmission = await tx.publicSubmission.update({
@@ -1829,10 +1853,96 @@ export async function reviewPublicSubmission(input: {
       entityId: input.id,
       actorUserId: input.reviewedByUserId,
       oldValues: { status: submission.status },
-      newValues: { status: input.status, itineraryId },
+      newValues: { status: input.status },
     });
 
     return reviewedSubmission;
+  });
+}
+
+export async function createTripFromPublicSubmission(
+  submissionId: string,
+  input: Omit<TripInput, "passengerIds"> & {
+    passengers: Array<{
+      firstName: string;
+      lastName: string;
+      phone?: string | null;
+      passengerType?: Prisma.PassengerCreateInput["passengerType"];
+    }>;
+    reviewedByUserId: string;
+  },
+) {
+  return prisma.$transaction(async (tx) => {
+    const submission = await tx.publicSubmission.findUnique({
+      where: { id: submissionId },
+      include: { itinerary: true },
+    });
+
+    if (!submission) {
+      throw new Error("Public submission not found.");
+    }
+
+    if (submission.itinerary) {
+      throw new Error("This submission has already been converted into an itinerary.");
+    }
+
+    if (input.passengers.length === 0) {
+      throw new Error("At least one passenger is required.");
+    }
+
+    const createdPassengers = await Promise.all(
+      input.passengers.map((passenger) =>
+        tx.passenger.create({
+          data: {
+            firstName: passenger.firstName,
+            lastName: passenger.lastName,
+            phone: normalizeOptionalPhone(passenger.phone ?? null),
+            passengerType: passenger.passengerType ?? PassengerType.GUEST_SANTO,
+          },
+        }),
+      ),
+    );
+
+    const itinerary = await tx.itinerary.create({
+      data: {
+        notes: input.notes ?? null,
+        createdByUserId: input.createdByUserId ?? input.reviewedByUserId,
+        sourceSubmissionId: submissionId,
+        itineraryPassengers: {
+          create: createdPassengers.map((passenger) => ({
+            passengerId: passenger.id,
+          })),
+        },
+      },
+    });
+
+    await syncTripRelations(tx, itinerary.id, {
+      ...input,
+      passengerIds: createdPassengers.map((passenger) => passenger.id),
+    });
+
+    await tx.publicSubmission.update({
+      where: { id: submissionId },
+      data: {
+        status: SubmissionStatus.APPROVED,
+        reviewedByUserId: input.reviewedByUserId,
+        reviewedAt: new Date(),
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "PUBLIC_SUBMISSION_CONVERTED",
+      entityType: "PublicSubmission",
+      entityId: submissionId,
+      actorUserId: input.reviewedByUserId,
+      oldValues: { status: submission.status },
+      newValues: {
+        status: SubmissionStatus.APPROVED,
+        itineraryId: itinerary.id,
+      },
+    });
+
+    return findTripDetailOrThrow(tx, itinerary.id);
   });
 }
 
