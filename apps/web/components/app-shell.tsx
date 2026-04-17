@@ -26,7 +26,9 @@ export function AppShell({
 }: PropsWithChildren<{ currentUser?: { firstName: string; lastName: string; role: string } | null; effectiveRole?: string | null }>) {
   const pathname = usePathname();
   const currentEffectiveRole = effectiveRole ?? currentUser?.role;
-  const visibleNavItems = navItems.filter((item) => !currentEffectiveRole || item.roles.includes(currentEffectiveRole));
+  const visibleNavItems = currentEffectiveRole
+    ? navItems.filter((item) => item.roles.includes(currentEffectiveRole))
+    : [];
 
   return (
     <div className="app-shell">

@@ -1,15 +1,12 @@
 "use client";
 
-import { signIn } from "next-auth/react";
+import Link from "next/link";
 
 export function LoginButton() {
   return (
-    <button
-      className="pill"
-      onClick={() => signIn("keycloak", { callbackUrl: "/" })}
-      type="button"
-    >
-      Continue With Google
-    </button>
+    <Link className="pill" href="/sign-in">
+      Sign In
+    </Link>
   );
 }
+

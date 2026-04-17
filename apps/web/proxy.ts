@@ -1,13 +1,25 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+
+import { findAuthorizedUserByEmail, findAuthorizedUserById } from "@west-santo/data";
 
 import { auth } from "@/auth";
 
 const ACCESS_DENIED_MESSAGE = "Your account is not enabled for this application. Contact an admin.";
 
-const protectedProxy = auth((request) => {
+const PROXY_ALLOWLIST = ["/api/auth", "/api/bot/link-telegram", "/access-denied", "/sign-in", "/sign-up"];
+
+async function protectedProxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApiRequest = pathname.startsWith("/api/");
-  const sessionUser = request.auth?.user;
+
+  if (PROXY_ALLOWLIST.some((allowedPath) => pathname.startsWith(allowedPath))) {
+    return NextResponse.next();
+  }
+
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+  const sessionUser = session?.user;
 
   if (!sessionUser) {
     if (isApiRequest) {
@@ -17,12 +29,20 @@ const protectedProxy = auth((request) => {
       );
     }
 
-    const signInUrl = new URL("/api/auth/signin", request.url);
+    const signInUrl = new URL("/sign-in", request.url);
     signInUrl.searchParams.set("callbackUrl", `${pathname}${search}`);
     return NextResponse.redirect(signInUrl);
   }
 
-  if (sessionUser.isActive === false || !sessionUser.role) {
+  const localUser = sessionUser.id
+    ? await findAuthorizedUserById(sessionUser.id)
+    : sessionUser.email
+      ? await findAuthorizedUserByEmail(sessionUser.email)
+      : null;
+  const role = localUser?.role;
+  const isActive = localUser?.isActive === true;
+
+  if (!isActive || !role) {
     if (isApiRequest) {
       return NextResponse.json(
         { error: { code: "FORBIDDEN", message: ACCESS_DENIED_MESSAGE } },
@@ -34,7 +54,7 @@ const protectedProxy = auth((request) => {
   }
 
   return NextResponse.next();
-});
+}
 
 export default protectedProxy;
 

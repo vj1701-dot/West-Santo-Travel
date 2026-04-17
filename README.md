@@ -1,6 +1,6 @@
 # West Santo Travel
 
-This repository is a self-hosted travel operations system for West Region santos. It combines a Next.js web console, PostgreSQL, Keycloak authentication, a Telegram bot worker, and a reminder scheduler to manage passenger itineraries, airport transport, mandir stays, staff access, and operational notifications.
+This repository is a self-hosted travel operations system for West Region santos. It combines a Next.js web console, PostgreSQL, Better Auth authentication, a Telegram bot worker, and a reminder scheduler to manage passenger itineraries, airport transport, mandir stays, staff access, and operational notifications.
 
 This document is the single source of truth for the project scope, product requirements, architecture, installation, setup, and day-to-day operating notes.
 
@@ -47,9 +47,9 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 
 ### 1. Identity And Access
 
-- Keycloak is the identity provider for the web app.
+- Better Auth is the authentication provider for the web app.
 - The local `User` table is the source of truth for authorization.
-- A successful Keycloak login does not grant app access unless a matching active local user exists.
+- Authenticated sessions are accepted only for local users with a valid role and active state.
 - Supported web roles are `ADMIN`, `COORDINATOR`, and `PASSENGER`.
 - Drivers are managed in a separate `Driver` table and currently operate through Telegram linkage rather than browser login.
 
@@ -97,8 +97,8 @@ Implemented now:
 - Next.js web app with authenticated dashboard and management screens
 - Tailwind CSS and shadcn/ui foundation layered alongside the legacy CSS system
 - Prisma/Postgres data model for users, passengers, airports, mandirs, trips, segments, bookings, accommodations, drivers, tasks, approvals, submissions, reminders, notifications, and audits
-- Keycloak-backed login with local authorization checks
-- Docker Compose stack for web, bot, scheduler, database, and Keycloak
+- Better Auth-backed login (Google + email/password) with local authorization checks
+- Docker Compose stack for web, bot, scheduler, and database
 - Add Flight trip editor with passenger autocomplete, airline autocomplete, per-segment pickup/dropoff entries, inline driver creation, and accommodation notes
 - Itinerary list redesign with edit flow at `/itineraries/[id]/edit`
 - Public submission intake endpoint and page at `/submission`
@@ -125,8 +125,6 @@ Partially implemented or intentionally deferred:
 │   ├── schema.prisma
 │   ├── migrations/
 │   └── seed.mjs
-├── scripts/
-│   └── bootstrap-keycloak.sh
 ├── docker-compose.yml
 └── .env.example
 ```
@@ -136,9 +134,6 @@ Partially implemented or intentionally deferred:
 ### Runtime Services
 
 - `db`: Postgres 16 for application data on `localhost:5432`
-- `keycloak-db`: Postgres 16 for Keycloak on `localhost:5433`
-- `keycloak`: identity provider on `http://localhost:8081`
-- `keycloak-setup`: one-shot bootstrap that creates or updates the realm, OIDC client, optional Google IdP, and optional development login
 - `bootstrap`: one-shot Prisma schema push and seed step
 - `web`: Next.js app on `http://localhost:3000`
 - `bot`: Telegram worker that links accounts and sends queued notifications
@@ -147,6 +142,8 @@ Partially implemented or intentionally deferred:
 ### Web App Surface
 
 - `/`: dashboard and upcoming trip overview
+- `/sign-in`: standalone authentication page for existing users
+- `/sign-up`: standalone authentication page for new users
 - `/add-flight`: trip builder for admins and coordinators
 - `/itineraries`: redesigned itinerary list with edit entrypoint
 - `/itineraries/[id]/edit`: full trip edit flow for admins and coordinators
@@ -157,6 +154,7 @@ Partially implemented or intentionally deferred:
 - `/submission`: public guest submission form
 - `/submissions`: admin/coordinator submission review queue
 - `/submissions/[id]/edit`: complete a public submission and convert it into an itinerary
+- `/submit-flight`: legacy path that redirects to `/submission`
 - `/admin`: export console
 - `/approvals`: approval review list
 - `/access-denied`: authorization failure page
@@ -176,14 +174,15 @@ The web app exposes route handlers under `apps/web/app/api` for:
 - reminder rules
 - CSV exports
 - Telegram linking
-- NextAuth / Keycloak auth callbacks
+- Better Auth session and auth callbacks
 
 ### Authentication Model
 
-- NextAuth is configured with the Keycloak provider.
-- Login succeeds only when the Keycloak identity email matches an active local `User`.
-- On successful login, the app stores local role and profile data in the session token.
-- Unauthorized or inactive users are redirected to `/access-denied`.
+- Better Auth is configured with Google social login and email/password.
+- New signups default to `PASSENGER` with active access, and existing role checks remain local to the app database.
+- Authorization for pages and APIs still resolves local `User` role and active status.
+- Unauthenticated web requests are redirected to `/sign-in`.
+- Authenticated users that are missing local access (inactive/missing role/not provisioned) are redirected to `/access-denied`.
 
 ## Core Domain Model
 
@@ -235,7 +234,7 @@ The bootstrap and seed flow creates a usable local sandbox:
 
 - airports: imported from OurAirports during seed/bootstrap
 - mandirs: imported from official BAPS global network pages during seed/bootstrap
-- local user `admin@westsanto.org` with role `ADMIN`
+- local user from `ADMIN_EMAIL` (default `admin@westsanto.org`) with role `ADMIN`
 - local user `coordinator@westsanto.org` with role `COORDINATOR`
 - passengers: two sample santos
 - drivers: one sample driver assigned to `LAX`
@@ -244,15 +243,15 @@ The bootstrap and seed flow creates a usable local sandbox:
 Important auth note:
 
 - the application database seed creates local user records
-- Keycloak login still requires a matching Keycloak user
-- in development bootstrap mode, `keycloak-setup` also creates the Keycloak login named by `KEYCLOAK_DEV_LOGIN_EMAIL`
+- Better Auth uses those same local users for authorization decisions
+- open sign-up creates local users with default `PASSENGER` role
 
 ## Local Installation And Setup
 
 ### Prerequisites
 
 - Docker Desktop with Docker Compose
-- enough free ports for `3000`, `5432`, `5433`, and `8081`
+- enough free ports for `3000` and `5432`
 - optional: Node.js 20+ if you want to run scripts outside Docker
 - optional: a Telegram bot token if you want live bot polling
 
@@ -267,11 +266,12 @@ cp .env.example .env
 Minimum values to review in `.env`:
 
 - `APP_BASE_URL`
-- `SESSION_SECRET`
-- `KEYCLOAK_ISSUER_URL`
-- `KEYCLOAK_ADMIN_PASSWORD`
-- `KEYCLOAK_CLIENT_SECRET`
-- `KEYCLOAK_DEV_LOGIN_PASSWORD`
+- `BETTER_AUTH_URL`
+- `NEXT_PUBLIC_BETTER_AUTH_URL`
+- `BETTER_AUTH_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `ADMIN_EMAIL` and `ADMIN_PASSWORD` for seeded admin credentials
 - `TELEGRAM_BOT_TOKEN` if you want a live bot
 - `AIRPORT_IMPORT_URL` if you want to override the default OurAirports feed during seed/bootstrap
 - `MANDIR_IMPORT_ENABLED` if you want to skip the BAPS mandir import during seed/bootstrap
@@ -279,16 +279,10 @@ Minimum values to review in `.env`:
 Recommended local values:
 
 - `APP_BASE_URL=http://localhost:3000`
-- `KEYCLOAK_ISSUER_URL=http://localhost:8081/realms/west-santo`
-- `KEYCLOAK_BOOTSTRAP_MODE=development`
+- `BETTER_AUTH_URL=http://localhost:3000`
+- `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000`
 - `AIRPORT_IMPORT_ENABLED=true`
 - `MANDIR_IMPORT_ENABLED=true`
-
-Notes:
-
-- `KEYCLOAK_ISSUER_URL` must be the browser-reachable realm URL, not the internal Docker hostname.
-- If you later expose the stack on a LAN or public domain, update both `APP_BASE_URL` and `KEYCLOAK_ISSUER_URL` to those real URLs.
-- If `KEYCLOAK_GOOGLE_CLIENT_ID` and `KEYCLOAK_GOOGLE_CLIENT_SECRET` are set, the bootstrap script configures Google as a Keycloak identity provider.
 
 ### 2. Start The Stack
 
@@ -296,7 +290,7 @@ Notes:
 docker compose up --build -d
 ```
 
-This brings up the databases, Keycloak, bootstrap jobs, web app, bot, and scheduler.
+This brings up the database, bootstrap job, web app, bot, and scheduler.
 
 ### 3. Verify Runtime Health
 
@@ -310,24 +304,14 @@ docker compose logs scheduler
 Expected local endpoints:
 
 - app: `http://localhost:3000`
-- Keycloak admin: `http://localhost:8081/admin`
 - app Postgres: `localhost:5432`
-- Keycloak Postgres: `localhost:5433`
 
 ### 4. First Login
 
-In development bootstrap mode:
-
-- the seed creates a local app admin at `admin@westsanto.org`
-- the Keycloak bootstrap can also create the same Keycloak user using `KEYCLOAK_DEV_LOGIN_EMAIL` and `KEYCLOAK_DEV_LOGIN_PASSWORD`
-
-If those values match, you can sign into the web app immediately after startup.
-
-If you want more users:
-
-- create or keep a local user record through the app or seed data
-- create the matching user in Keycloak with the same email
-- ensure the local user is active
+- the seed creates a local app admin from `ADMIN_EMAIL` (default: `admin@westsanto.org`)
+- if `ADMIN_PASSWORD` is set, that admin can sign in with email/password
+- you can sign in with Google or email/password through Better Auth
+- users can also self-register and receive default `PASSENGER` access
 
 ### 5. Stop The Stack
 
@@ -355,14 +339,21 @@ npm run typecheck
 npm run test
 ```
 
+If you run the web app locally while keeping Postgres in Docker:
+
+- set `DATABASE_URL` host to `localhost` (not `db`)
+- keep the database service running with `docker compose up -d db`
+
 Relevant scripts:
 
 - `npm run build`: build the web app workspace
 - `npm run dev`: run the web app locally
 - `npm run dev:bot`: run the bot locally
 - `npm run dev:scheduler`: run the scheduler locally
+- `npm run db:migrate`: apply migrations
 - `npm run typecheck`: Next.js type generation plus TypeScript checks
 - `npm run test`: package-level tests in `packages/core`
+- `npm run docker:test`: run tests in the Docker stack
 
 Airport import notes:
 
@@ -428,9 +419,9 @@ The most valuable next product slices, based on the codebase as it exists now, a
 ## Deployment Notes
 
 - This project is designed to run cleanly through Docker Compose first.
-- For non-local environments, set `APP_BASE_URL` and `KEYCLOAK_ISSUER_URL` to the real public origin.
-- Keep Keycloak client redirect and logout URIs aligned with the deployed web URL.
-- Treat `SESSION_SECRET`, Keycloak admin credentials, Keycloak client secret, Google client secret, and Telegram bot token as production secrets.
+- For non-local environments, set `APP_BASE_URL`, `BETTER_AUTH_URL`, and `NEXT_PUBLIC_BETTER_AUTH_URL` to the real public origin.
+- Keep Google OAuth redirect URIs aligned with the deployed web URL.
+- Treat `BETTER_AUTH_SECRET`, Google client secret, and Telegram bot token as production secrets.
 
 ## Short Project Definition
 

@@ -124,10 +124,13 @@ enum CsvImportStatus {
 model User {
   id               String   @id @default(uuid()) @db.Uuid
   email            String   @unique
+  name             String?
+  emailVerified    Boolean  @default(false)
+  image            String?
   phone            String?
-  firstName        String
-  lastName         String
-  role             UserRole
+  firstName        String   @default("")
+  lastName         String   @default("")
+  role             UserRole @default(PASSENGER)
   isActive         Boolean  @default(true)
   accessProvisionedAt DateTime @default(now()) @db.Timestamptz(6)
   identityProvider String?
@@ -157,6 +160,8 @@ model User {
   csvImportJobs          CsvImportJob[]
   aiQueryLogs            AiQueryLog[]
   createdReminderRules   ReminderRule[]
+  accounts              Account[]
+  sessions              Session[]
 
   @@index([phone])
 }
@@ -201,6 +206,54 @@ model PassengerUserLink {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([passengerId, userId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @db.Uuid
+  expiresAt DateTime @db.Timestamptz(6)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@index([value])
 }
 
 model Airport {

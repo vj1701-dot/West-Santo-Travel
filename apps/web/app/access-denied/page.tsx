@@ -1,8 +1,6 @@
 import Link from "next/link";
 
 import { AppShell } from "@/components/app-shell";
-import { LoginButton } from "@/components/login-button";
-import { PageHeader } from "@/components/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +18,12 @@ export default function AccessDeniedPage() {
           Your account is not enabled for this application. You may be authenticated but not provisioned locally, inactive, or missing the required role.
         </p>
         <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", flexWrap: "wrap" }}>
-          <LoginButton />
+          <Link className="pill" href="/sign-in" style={{ display: "inline-block", textDecoration: "none" }}>
+            Sign In
+          </Link>
+          <Link className="button-secondary" href="/sign-up" style={{ display: "inline-block", textDecoration: "none" }}>
+            Sign Up
+          </Link>
           <Link className="button-secondary" href="/" style={{ display: "inline-block", textDecoration: "none" }}>
             Return Home
           </Link>
