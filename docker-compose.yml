@@ -23,7 +23,12 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@westsanto.org}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      AIRPORT_IMPORT_ENABLED: ${AIRPORT_IMPORT_ENABLED:-true}
+      AIRPORT_IMPORT_URL: ${AIRPORT_IMPORT_URL:-https://davidmegginson.github.io/ourairports-data/airports.csv}
+      MANDIR_IMPORT_ENABLED: ${MANDIR_IMPORT_ENABLED:-true}
       NEXT_TELEMETRY_DISABLED: "1"
     command: >
       sh -c "npx prisma db push --schema prisma/schema.prisma &&
@@ -40,7 +45,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-replace-with-a-long-random-secret}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
       NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3000}
@@ -61,7 +66,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       BOT_HEALTH_POLL_MS: ${BOT_HEALTH_POLL_MS:-60000}
 
@@ -75,7 +80,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
       SCHEDULER_TICK_MS: ${SCHEDULER_TICK_MS:-60000}
 
 volumes:

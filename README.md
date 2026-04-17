@@ -265,6 +265,8 @@ cp .env.example .env
 
 Minimum values to review in `.env`:
 
+- `DATABASE_URL` for app commands you run on your host machine
+- `DOCKER_DATABASE_URL` for services running inside Docker Compose
 - `APP_BASE_URL`
 - `BETTER_AUTH_URL`
 - `NEXT_PUBLIC_BETTER_AUTH_URL`
@@ -278,11 +280,18 @@ Minimum values to review in `.env`:
 
 Recommended local values:
 
+- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/west_santo_travel?schema=public`
+- `DOCKER_DATABASE_URL=postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public`
 - `APP_BASE_URL=http://localhost:3000`
 - `BETTER_AUTH_URL=http://localhost:3000`
 - `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000`
 - `AIRPORT_IMPORT_ENABLED=true`
 - `MANDIR_IMPORT_ENABLED=true`
+
+Database host rules:
+
+- use `db` when the process runs inside Docker Compose
+- use `localhost` when the process runs on your host machine and talks to Postgres in Docker
 
 ### 2. Start The Stack
 
@@ -291,6 +300,8 @@ docker compose up --build -d
 ```
 
 This brings up the database, bootstrap job, web app, bot, and scheduler.
+
+Compose services always read `DOCKER_DATABASE_URL`, so a host-only `DATABASE_URL` set to `localhost` will not break container startup.
 
 ### 3. Verify Runtime Health
 
@@ -342,6 +353,7 @@ npm run test
 If you run the web app locally while keeping Postgres in Docker:
 
 - set `DATABASE_URL` host to `localhost` (not `db`)
+- leave `DOCKER_DATABASE_URL` on `db` for Compose-managed services
 - keep the database service running with `docker compose up -d db`
 
 Relevant scripts:
