@@ -15,6 +15,12 @@ type PassengerOption = {
   detail?: string;
 };
 
+type UserOption = {
+  id: string;
+  label: string;
+  detail?: string;
+};
+
 type DriverOption = {
   id: string;
   name: string;
@@ -48,6 +54,10 @@ type InitialTripData = {
   id?: string;
   notes?: string | null;
   passengerIds: string[];
+  travelerRefs?: Array<{
+    entityType: "PASSENGER" | "USER" | "DRIVER";
+    entityId: string;
+  }>;
   booking?: {
     confirmationNumber?: string | null;
     totalCost?: number | null;
@@ -72,6 +82,7 @@ type InitialTripData = {
 
 type TripBuilderProps = {
   passengers: PassengerOption[];
+  users: UserOption[];
   drivers: DriverOption[];
   airports: AirportChoice[];
   initialTrip?: InitialTripData;
@@ -85,6 +96,11 @@ type SearchOption = {
   id: string;
   label: string;
   detail?: string;
+};
+
+type TravelerRef = {
+  entityType: "PASSENGER" | "USER" | "DRIVER";
+  entityId: string;
 };
 
 function generateId(prefix: string) {
@@ -131,6 +147,7 @@ function createSegment(airports: AirportChoice[], source?: InitialTripData["segm
 
 export function TripBuilder({
   passengers,
+  users,
   drivers,
   airports,
   initialTrip,
@@ -143,7 +160,9 @@ export function TripBuilder({
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [selectedPassengerIds, setSelectedPassengerIds] = useState<string[]>(initialTrip?.passengerIds ?? []);
+  const [selectedTravelerRefs, setSelectedTravelerRefs] = useState<TravelerRef[]>(initialTrip?.travelerRefs ?? []);
   const [passengerQuery, setPassengerQuery] = useState("");
+  const [travelerQuery, setTravelerQuery] = useState("");
   const [segments, setSegments] = useState<SegmentState[]>(
     initialTrip?.segments?.length ? initialTrip.segments.map((segment) => createSegment(airports, segment)) : [createSegment(airports)],
   );
@@ -161,8 +180,44 @@ export function TripBuilder({
     () => passengers.map((passenger) => ({ id: passenger.id, label: passenger.label, detail: passenger.detail })),
     [passengers],
   );
+  const userOptionMap = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
+  const driverOptionMap = useMemo(() => new Map(driverOptions.map((driver) => [driver.id, driver])), [driverOptions]);
   const selectedPassengers = passengers.filter((passenger) => selectedPassengerIds.includes(passenger.id));
   const availablePassengerOptions = passengerOptions.filter((passenger) => !selectedPassengerIds.includes(passenger.id));
+  const selectedTravelerKeys = new Set(selectedTravelerRefs.map((ref) => `${ref.entityType}:${ref.entityId}`));
+  const availableTravelerOptions: SearchOption[] = [
+    ...users
+      .filter((user) => !selectedTravelerKeys.has(`USER:${user.id}`))
+      .map((user) => ({
+        id: `USER:${user.id}`,
+        label: user.label,
+        detail: ["User", user.detail].filter(Boolean).join(" · "),
+      })),
+    ...driverOptions
+      .filter((driver) => !selectedTravelerKeys.has(`DRIVER:${driver.id}`))
+      .map((driver) => ({
+        id: `DRIVER:${driver.id}`,
+        label: driver.name,
+        detail: ["Driver", driver.phone, driver.airportCodes?.join(", ")].filter(Boolean).join(" · "),
+      })),
+  ];
+  const selectedExtraTravelers = selectedTravelerRefs.map((ref) => {
+    if (ref.entityType === "USER") {
+      const user = userOptionMap.get(ref.entityId);
+      return {
+        key: `USER:${ref.entityId}`,
+        label: user?.label ?? "Unknown user",
+        prefix: "User",
+      };
+    }
+
+    const driver = driverOptionMap.get(ref.entityId);
+    return {
+      key: `DRIVER:${ref.entityId}`,
+      label: driver?.name ?? "Unknown driver",
+      prefix: "Driver",
+    };
+  });
   const airlineOptions = AIRLINE_OPTIONS.map((airline) => ({ id: airline, label: airline }));
   const driverSearchOptions = driverOptions.map((driver) => ({
     id: driver.id,
@@ -237,8 +292,8 @@ export function TripBuilder({
         !segment.arrivalTimeLocal,
     );
 
-    if (selectedPassengerIds.length === 0) {
-      setMessage("Select at least one passenger.");
+    if (selectedPassengerIds.length === 0 && selectedTravelerRefs.length === 0) {
+      setMessage("Select at least one traveler.");
       return;
     }
 
@@ -250,6 +305,7 @@ export function TripBuilder({
     const payload = {
       notes: tripNote.trim() || null,
       passengerIds: selectedPassengerIds,
+      travelerRefs: selectedTravelerRefs,
       booking: bookingId.trim() || totalPrice.trim() ? { confirmationNumber: bookingId.trim() || null, totalCost: totalPrice.trim() ? Number(totalPrice) : null } : null,
       accommodation: accommodationNote.trim() ? { notes: accommodationNote.trim() } : null,
       segments: segments.map((segment, index) => ({
@@ -296,11 +352,13 @@ export function TripBuilder({
           <AccordionItem value="passengers">
             <AccordionTrigger>
               <div>
-                <strong style={{ fontSize: "1rem", color: "var(--slate-900)" }}>Passengers</strong>
+                <strong style={{ fontSize: "1rem", color: "var(--slate-900)" }}>Travelers</strong>
                 <p style={{ fontSize: "0.875rem", color: "var(--slate-500)", margin: "0.25rem 0 0 0" }}>
-                  {selectedPassengerIds.length === 0
-                    ? "Search passengers and add them to this trip"
-                    : `${selectedPassengerIds.length} passenger${selectedPassengerIds.length === 1 ? "" : "s"} selected`}
+                  {selectedPassengerIds.length + selectedTravelerRefs.length === 0
+                    ? "Search passengers, users, or drivers and add them to this trip"
+                    : `${selectedPassengerIds.length + selectedTravelerRefs.length} traveler${
+                        selectedPassengerIds.length + selectedTravelerRefs.length === 1 ? "" : "s"
+                      } selected`}
                 </p>
               </div>
             </AccordionTrigger>
@@ -316,6 +374,26 @@ export function TripBuilder({
                   options={availablePassengerOptions}
                   placeholder="Type a passenger name"
                   value={passengerQuery}
+                />
+                <SearchCombobox
+                  clearOnSelect
+                  label="User or driver"
+                  onSelect={(option) => {
+                    const [entityType, entityId] = option.id.split(":");
+                    if (!entityType || !entityId || (entityType !== "USER" && entityType !== "DRIVER")) {
+                      return;
+                    }
+
+                    setSelectedTravelerRefs((current) =>
+                      current.some((item) => item.entityType === entityType && item.entityId === entityId)
+                        ? current
+                        : [...current, { entityType, entityId }],
+                    );
+                  }}
+                  onValueChange={setTravelerQuery}
+                  options={availableTravelerOptions}
+                  placeholder="Type a user or driver"
+                  value={travelerQuery}
                 />
                 {selectedPassengers.length > 0 ? (
                   <div
@@ -340,6 +418,38 @@ export function TripBuilder({
                           onClick={() => setSelectedPassengerIds((current) => current.filter((id) => id !== passenger.id))}
                         >
                           {passenger.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {selectedExtraTravelers.length > 0 ? (
+                  <div
+                    style={{
+                      display: "grid",
+                      gap: "0.6rem",
+                      padding: "0.85rem 1rem",
+                      border: "1px solid var(--line)",
+                      borderRadius: "0.9rem",
+                      background: "var(--bg-soft)",
+                    }}
+                  >
+                    <p className="eyebrow" style={{ margin: 0 }}>
+                      Selected linked travelers
+                    </p>
+                    <div className="chip-row">
+                      {selectedExtraTravelers.map((traveler) => (
+                        <button
+                          key={traveler.key}
+                          className="chip"
+                          type="button"
+                          onClick={() =>
+                            setSelectedTravelerRefs((current) =>
+                              current.filter((item) => `${item.entityType}:${item.entityId}` !== traveler.key),
+                            )
+                          }
+                        >
+                          {traveler.prefix}: {traveler.label}
                         </button>
                       ))}
                     </div>

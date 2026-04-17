@@ -1,4 +1,4 @@
-import { listAirports, listDrivers, listPassengers } from "@west-santo/data";
+import { listAirports, listDrivers, listPassengers, listUsers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -14,7 +14,7 @@ export default async function AddFlightPage() {
     redirect("/access-denied");
   }
 
-  const [passengers, airports, drivers] = await Promise.all([listPassengers(), listAirports(), listDrivers()]);
+  const [passengers, airports, drivers, users] = await Promise.all([listPassengers(), listAirports(), listDrivers(), listUsers()]);
 
   return (
     <AppShell currentUser={currentUser}>
@@ -41,6 +41,11 @@ export default async function AddFlightPage() {
           id: passenger.id,
           label: `${passenger.firstName} ${passenger.lastName}`,
           detail: passenger.phone ?? passenger.email ?? passenger.legalName ?? passenger.passengerType,
+        }))}
+        users={users.map((user) => ({
+          id: user.id,
+          label: `${user.firstName} ${user.lastName}`.trim() || user.email,
+          detail: [user.role, user.email, user.phone].filter(Boolean).join(" · "),
         }))}
         submitLabel="Save trip"
         successPath="/itineraries"

@@ -5,10 +5,16 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRoles } from "@/lib/auth/guards";
 
+const travelerRefSchema = z.object({
+  entityType: z.enum(["PASSENGER", "USER", "DRIVER"]),
+  entityId: z.string().uuid(),
+});
+
 const updateItinerarySchema = z.object({
   notes: z.string().nullable().optional(),
   status: z.nativeEnum(ItineraryStatus).optional(),
-  passengerIds: z.array(z.string().uuid()).min(1).optional(),
+  passengerIds: z.array(z.string().uuid()).optional(),
+  travelerRefs: z.array(travelerRefSchema).optional(),
   booking: z
     .object({
       confirmationNumber: z.string().nullable().optional(),
@@ -71,7 +77,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     return fail("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Invalid itinerary update payload.", 400);
   }
 
-  const isFullTripUpdate = Array.isArray(parsed.data.passengerIds) || Array.isArray(parsed.data.segments);
+  const isFullTripUpdate =
+    Array.isArray(parsed.data.passengerIds) || Array.isArray(parsed.data.travelerRefs) || Array.isArray(parsed.data.segments);
 
   if (auth.role === "COORDINATOR") {
     const itinerary = await getItineraryDetail(id);
@@ -96,13 +103,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 
   if (isFullTripUpdate) {
     const passengerIds = parsed.data.passengerIds ?? [];
+    const travelerRefs = parsed.data.travelerRefs ?? [];
     const segments = parsed.data.segments ?? [];
+    if (passengerIds.length === 0 && travelerRefs.length === 0) {
+      return fail("BAD_REQUEST", "Select at least one traveler.", 400);
+    }
     return ok(
       await updateTrip(id, {
         createdByUserId: auth.id,
         notes: parsed.data.notes ?? null,
         status: parsed.data.status,
         passengerIds,
+        travelerRefs,
         booking: parsed.data.booking ?? null,
         accommodation: parsed.data.accommodation ?? null,
         segments,
