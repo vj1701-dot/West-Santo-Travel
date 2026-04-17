@@ -1,0 +1,87 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: west_santo_travel
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5430:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d west_santo_travel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  bootstrap:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@westsanto.org}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      AIRPORT_IMPORT_ENABLED: ${AIRPORT_IMPORT_ENABLED:-true}
+      AIRPORT_IMPORT_URL: ${AIRPORT_IMPORT_URL:-https://davidmegginson.github.io/ourairports-data/airports.csv}
+      MANDIR_IMPORT_ENABLED: ${MANDIR_IMPORT_ENABLED:-true}
+      NEXT_TELEMETRY_DISABLED: "1"
+    command: >
+      sh -c "npx prisma db push --schema prisma/schema.prisma &&
+      node --import tsx prisma/seed.mjs"
+    restart: "no"
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-replace-with-a-long-random-secret}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-replace-with-google-client-id}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-replace-with-google-client-secret}
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "3002:3000"
+    command: npm run start --workspace apps/web
+
+  bot:
+    build:
+      context: .
+      dockerfile: apps/bot/Dockerfile
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      BOT_HEALTH_POLL_MS: ${BOT_HEALTH_POLL_MS:-60000}
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: apps/scheduler/Dockerfile
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
+      SCHEDULER_TICK_MS: ${SCHEDULER_TICK_MS:-60000}
+
+volumes:
+  postgres_data:
