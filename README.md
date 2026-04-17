@@ -142,6 +142,8 @@ Partially implemented or intentionally deferred:
 ### Web App Surface
 
 - `/`: dashboard and upcoming trip overview
+- `/sign-in`: standalone authentication page for existing users
+- `/sign-up`: standalone authentication page for new users
 - `/add-flight`: trip builder for admins and coordinators
 - `/itineraries`: redesigned itinerary list with edit entrypoint
 - `/itineraries/[id]/edit`: full trip edit flow for admins and coordinators
@@ -152,6 +154,7 @@ Partially implemented or intentionally deferred:
 - `/submission`: public guest submission form
 - `/submissions`: admin/coordinator submission review queue
 - `/submissions/[id]/edit`: complete a public submission and convert it into an itinerary
+- `/submit-flight`: legacy path that redirects to `/submission`
 - `/admin`: export console
 - `/approvals`: approval review list
 - `/access-denied`: authorization failure page
@@ -178,7 +181,8 @@ The web app exposes route handlers under `apps/web/app/api` for:
 - Better Auth is configured with Google social login and email/password.
 - New signups default to `PASSENGER` with active access, and existing role checks remain local to the app database.
 - Authorization for pages and APIs still resolves local `User` role and active status.
-- Unauthorized or inactive users are redirected to `/access-denied`.
+- Unauthenticated web requests are redirected to `/sign-in`.
+- Authenticated users that are missing local access (inactive/missing role/not provisioned) are redirected to `/access-denied`.
 
 ## Core Domain Model
 
@@ -335,14 +339,21 @@ npm run typecheck
 npm run test
 ```
 
+If you run the web app locally while keeping Postgres in Docker:
+
+- set `DATABASE_URL` host to `localhost` (not `db`)
+- keep the database service running with `docker compose up -d db`
+
 Relevant scripts:
 
 - `npm run build`: build the web app workspace
 - `npm run dev`: run the web app locally
 - `npm run dev:bot`: run the bot locally
 - `npm run dev:scheduler`: run the scheduler locally
+- `npm run db:migrate`: apply migrations
 - `npm run typecheck`: Next.js type generation plus TypeScript checks
 - `npm run test`: package-level tests in `packages/core`
+- `npm run docker:test`: run tests in the Docker stack
 
 Airport import notes:
 
