@@ -27,6 +27,21 @@ function toSummaryRole(role?: string | null): UserRole {
   return UserRole.ADMIN;
 }
 
+function parseDisplayName(displayName?: string | null) {
+  const normalized = displayName?.trim();
+  if (!normalized) {
+    return { firstName: null as string | null, lastName: null as string | null };
+  }
+
+  const [firstName, ...rest] = normalized.split(/\s+/);
+  const lastName = rest.join(" ").trim() || null;
+
+  return {
+    firstName: firstName?.trim() || null,
+    lastName,
+  };
+}
+
 type FlightSegmentInput = {
   itineraryId: string;
   segmentOrder: number;
@@ -669,6 +684,7 @@ export async function syncUserIdentityOnLogin(input: {
   email: string;
   provider?: string | null;
   subject?: string | null;
+  displayName?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({
@@ -679,10 +695,18 @@ export async function syncUserIdentityOnLogin(input: {
       return null;
     }
 
+    const parsedName = parseDisplayName(input.displayName);
+    const hasFirstName = user.firstName.trim().length > 0;
+    const hasLastName = user.lastName.trim().length > 0;
+    const hasName = Boolean(user.name?.trim());
+
     const updated = await tx.user.update({
       where: { id: user.id },
       data: {
         lastLoginAt: new Date(),
+        name: hasName ? user.name : (input.displayName?.trim() || user.name),
+        firstName: hasFirstName ? user.firstName : (parsedName.firstName ?? user.firstName),
+        lastName: hasLastName ? user.lastName : (parsedName.lastName ?? user.lastName),
         identityProvider: input.provider ?? user.identityProvider ?? "better-auth",
         identitySubject: input.subject ?? user.identitySubject,
         identityLinkedAt: user.identityLinkedAt ?? new Date(),

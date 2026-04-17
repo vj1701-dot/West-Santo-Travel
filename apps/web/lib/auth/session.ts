@@ -12,6 +12,14 @@ const ACCESS_DENIED_MESSAGE = "Your account is not enabled for this application.
 
 export type AuthorizedUser = Awaited<ReturnType<typeof findAuthorizedUserById>>;
 
+function shouldHydrateNames(user: { firstName: string; lastName: string }, sessionName?: string | null) {
+  if (!sessionName?.trim()) {
+    return false;
+  }
+
+  return user.firstName.trim().length === 0 || user.lastName.trim().length === 0;
+}
+
 async function resolveSessionUser() {
   const session = await auth.api.getSession({
     headers: await headers(),
@@ -25,11 +33,12 @@ async function resolveSessionUser() {
     const byId = await findAuthorizedUserById(session.user.id);
 
     if (byId) {
-      if (!byId.identityLinkedAt) {
+      if (!byId.identityLinkedAt || shouldHydrateNames(byId, session.user.name)) {
         const synced = await syncUserIdentityOnLogin({
           email: byId.email,
           provider: "better-auth",
           subject: byId.id,
+          displayName: session.user.name,
         });
         return { hasSession: true, user: synced ?? byId };
       }
@@ -39,11 +48,12 @@ async function resolveSessionUser() {
 
   const byEmail = await findAuthorizedUserByEmail(session.user.email);
 
-  if (byEmail && !byEmail.identityLinkedAt) {
+  if (byEmail && (!byEmail.identityLinkedAt || shouldHydrateNames(byEmail, session.user.name))) {
     const synced = await syncUserIdentityOnLogin({
       email: byEmail.email,
       provider: "better-auth",
       subject: byEmail.id,
+      displayName: session.user.name,
     });
     return { hasSession: true, user: synced ?? byEmail };
   }
