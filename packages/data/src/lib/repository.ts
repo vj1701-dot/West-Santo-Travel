@@ -625,14 +625,14 @@ export async function getDashboardSnapshot(input?: {
       prisma.transportTask.findMany({
         where: input?.airportIds?.length
           ? {
-              airportId: {
-                in: input.airportIds,
-              },
-              itinerary: { isArchived: false },
-            }
-          : {
-              itinerary: { isArchived: false },
+            airportId: {
+              in: input.airportIds,
             },
+            itinerary: { isArchived: false },
+          }
+          : {
+            itinerary: { isArchived: false },
+          },
         take: 5,
         orderBy: { scheduledTimeLocal: "asc" },
         include: {
@@ -682,12 +682,12 @@ export async function listPassengers(search?: string, options?: { includeInactiv
       ...(options?.includeInactive ? {} : { isActive: true }),
       ...(search
         ? {
-            OR: [
-              { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-              { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-              { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            ],
-          }
+          OR: [
+            { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          ],
+        }
         : {}),
     },
     include: {
@@ -741,12 +741,12 @@ export async function listUsers(search?: string, options?: { includeInactive?: b
       ...(options?.includeInactive ? {} : { isActive: true }),
       ...(search
         ? {
-            OR: [
-              { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-              { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-              { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            ],
-          }
+          OR: [
+            { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          ],
+        }
         : {}),
     },
     include: {
@@ -1262,9 +1262,9 @@ async function syncTripRelations(tx: Prisma.TransactionClient, itineraryId: stri
 
   const hasBooking = Boolean(
     input.booking &&
-      ((input.booking.confirmationNumber ?? "").trim() ||
-        input.booking.totalCost === 0 ||
-        (input.booking.totalCost !== null && input.booking.totalCost !== undefined)),
+    ((input.booking.confirmationNumber ?? "").trim() ||
+      input.booking.totalCost === 0 ||
+      (input.booking.totalCost !== null && input.booking.totalCost !== undefined)),
   );
 
   if (hasBooking && input.booking) {
@@ -1601,12 +1601,12 @@ export async function listAirportOptions(search?: string) {
   const airports = await prisma.airport.findMany({
     where: search
       ? {
-          OR: [
-            { code: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { name: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { city: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          ],
-        }
+        OR: [
+          { code: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          { name: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          { city: { contains: search, mode: Prisma.QueryMode.insensitive } },
+        ],
+      }
       : undefined,
     orderBy: { code: "asc" },
     take: 20,
@@ -2665,12 +2665,12 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
             lastSyncedAt: syncedAt,
             ...(wasArchived
               ? {
-                  syncStatus: ExternalSyncStatus.IN_SYNC,
-                  lastPayloadHash: payloadHash,
-                  sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, trip),
-                  pendingRosterDiff: Prisma.JsonNull,
-                  lastReviewDiffAt: null,
-                }
+                syncStatus: ExternalSyncStatus.IN_SYNC,
+                lastPayloadHash: payloadHash,
+                sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, trip),
+                pendingRosterDiff: Prisma.JsonNull,
+                lastReviewDiffAt: null,
+              }
               : {}),
           },
         });
@@ -3523,32 +3523,32 @@ async function createPassengerFromTraveler(
   tx: Prisma.TransactionClient,
   input:
     | {
-        sourceType: "USER";
-        user: {
-          id: string;
-          firstName: string;
-          lastName: string;
-          email: string;
-          phone?: string | null;
-        };
-        actorUserId?: string | null;
-      }
+      sourceType: "USER";
+      user: {
+        id: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone?: string | null;
+      };
+      actorUserId?: string | null;
+    }
     | {
-        sourceType: "DRIVER";
-        driver: {
-          id: string;
-          name: string;
-          phone?: string | null;
-        };
-        actorUserId?: string | null;
-      },
+      sourceType: "DRIVER";
+      driver: {
+        id: string;
+        name: string;
+        phone?: string | null;
+      };
+      actorUserId?: string | null;
+    },
 ) {
   const parsedName =
     input.sourceType === "USER"
       ? {
-          firstName: input.user.firstName.trim() || "Traveler",
-          lastName: input.user.lastName.trim() || "Passenger",
-        }
+        firstName: input.user.firstName.trim() || "Traveler",
+        lastName: input.user.lastName.trim() || "Passenger",
+      }
       : parseDisplayName(input.driver.name);
 
   const passenger = await tx.passenger.create({
@@ -3601,12 +3601,13 @@ async function resolveTravelerRefsToPassengerIds(
         include: {
           passengerUserLinks: {
             include: { passenger: true },
-            take: 1,
           },
         },
+
       });
 
-      let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> = user.passengerUserLinks[0]?.passenger ?? null;
+      let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> = user.passengerUserLinks?.passenger ?? null;
+
       let mode = "linked";
 
       if (!passenger) {
@@ -3731,13 +3732,13 @@ export async function linkTelegramAccount(chatId: string, rawInput: string, tele
     }),
     normalizedPhone
       ? prisma.passenger.findMany({
-          where: { phone: normalizedPhone },
-        })
+        where: { phone: normalizedPhone },
+      })
       : Promise.resolve([]),
     normalizedPhone
       ? prisma.driver.findMany({
-          where: { phone: normalizedPhone },
-        })
+        where: { phone: normalizedPhone },
+      })
       : Promise.resolve([]),
   ]);
 
@@ -4077,29 +4078,29 @@ async function listScopedUsersForAirports(
   return tx.user.findMany({
     where: role === UserRole.ADMIN
       ? {
-          role: UserRole.ADMIN,
-          isActive: true,
-          telegramChatId: { not: null },
-          adminAirports: {
-            some: {
-              airportId: {
-                in: airportIds,
-              },
-            },
-          },
-        }
-      : {
-          role: UserRole.COORDINATOR,
-          isActive: true,
-          telegramChatId: { not: null },
-          coordinatorAirports: {
-            some: {
-              airportId: {
-                in: airportIds,
-              },
+        role: UserRole.ADMIN,
+        isActive: true,
+        telegramChatId: { not: null },
+        adminAirports: {
+          some: {
+            airportId: {
+              in: airportIds,
             },
           },
         },
+      }
+      : {
+        role: UserRole.COORDINATOR,
+        isActive: true,
+        telegramChatId: { not: null },
+        coordinatorAirports: {
+          some: {
+            airportId: {
+              in: airportIds,
+            },
+          },
+        },
+      },
     include: {
       adminAirports: { include: { airport: true } },
       coordinatorAirports: { include: { airport: true } },
@@ -4141,11 +4142,11 @@ function buildTransportSummaryText(input: {
   const scheduled =
     input.scheduledTime
       ? new Intl.DateTimeFormat("en-US", {
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        }).format(input.scheduledTime)
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(input.scheduledTime)
       : "Not scheduled";
 
   return [
