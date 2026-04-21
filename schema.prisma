@@ -104,6 +104,13 @@ enum ReminderAudience {
 
 enum ReminderChannel {
   TELEGRAM
+  SMS
+  INTERNAL
+}
+
+enum NotificationChannel {
+  TELEGRAM
+  SMS
   INTERNAL
 }
 
@@ -124,10 +131,13 @@ enum CsvImportStatus {
 model User {
   id               String   @id @default(uuid()) @db.Uuid
   email            String   @unique
+  name             String?
+  emailVerified    Boolean  @default(false)
+  image            String?
   phone            String?
-  firstName        String
-  lastName         String
-  role             UserRole
+  firstName        String   @default("")
+  lastName         String   @default("")
+  role             UserRole @default(PASSENGER)
   isActive         Boolean  @default(true)
   accessProvisionedAt DateTime @default(now()) @db.Timestamptz(6)
   identityProvider String?
@@ -157,6 +167,8 @@ model User {
   csvImportJobs          CsvImportJob[]
   aiQueryLogs            AiQueryLog[]
   createdReminderRules   ReminderRule[]
+  accounts              Account[]
+  sessions              Session[]
 
   @@index([phone])
 }
@@ -171,6 +183,7 @@ model Passenger {
   telegramChatId         String?
   telegramUsername       String?
   passengerType          PassengerType
+  isActive               Boolean  @default(true)
   linkedPrimaryPassengerId String? @db.Uuid
   notes                  String?
   createdAt              DateTime @default(now()) @db.Timestamptz(6)
@@ -185,6 +198,7 @@ model Passenger {
   auditPassengerActor    AuditLog[] @relation("AuditActorPassenger")
 
   @@index([lastName, firstName])
+  @@index([isActive])
   @@index([legalName])
   @@index([phone])
 }
@@ -199,6 +213,54 @@ model PassengerUserLink {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([passengerId, userId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @db.Uuid
+  expiresAt DateTime @db.Timestamptz(6)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@index([value])
 }
 
 model Airport {
@@ -304,6 +366,7 @@ model Driver {
   phone            String?
   telegramChatId   String?  @unique
   telegramUsername String?
+  isActive         Boolean  @default(true)
   notes            String?
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
@@ -315,6 +378,7 @@ model Driver {
   notificationRecipients NotificationLog[]
   auditDriverActor       AuditLog[] @relation("AuditActorDriver")
 
+  @@index([isActive])
   @@index([phone])
 }
 
@@ -333,6 +397,7 @@ model DriverAirport {
 model Itinerary {
   id                 String          @id @default(uuid()) @db.Uuid
   status             ItineraryStatus @default(CREATED)
+  isArchived         Boolean         @default(false)
   createdByUserId    String?         @db.Uuid
   sourceSubmissionId String?         @unique @db.Uuid
   notes              String?
@@ -351,6 +416,7 @@ model Itinerary {
   relatedDuplicateFlags DuplicateFlag[]  @relation("DuplicateFlagRelatedItinerary")
 
   @@index([status])
+  @@index([isArchived])
   @@index([createdByUserId])
 }
 
@@ -428,7 +494,7 @@ model FlightSegment {
 model Accommodation {
   id           String   @id @default(uuid()) @db.Uuid
   itineraryId  String   @db.Uuid
-  mandirId     String   @db.Uuid
+  mandirId     String?  @db.Uuid
   room         String?
   checkInDate  DateTime? @db.Date
   checkOutDate DateTime? @db.Date
@@ -437,7 +503,7 @@ model Accommodation {
   updatedAt    DateTime @updatedAt @db.Timestamptz(6)
 
   itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  mandir    Mandir    @relation(fields: [mandirId], references: [id])
+  mandir    Mandir?   @relation(fields: [mandirId], references: [id])
 }
 
 model TransportTask {
@@ -577,10 +643,15 @@ model DuplicateFlag {
 model NotificationLog {
   id                   String             @id @default(uuid()) @db.Uuid
   notificationType     NotificationType
+  deliveryChannel      NotificationChannel @default(TELEGRAM)
   recipientUserId      String?            @db.Uuid
   recipientPassengerId String?            @db.Uuid
   recipientDriverId    String?            @db.Uuid
   recipientChatId      String?
+  recipientPhone       String?
+  providerName         String?
+  providerMessageId    String?
+  dedupeKey            String?            @unique
   payload              Json
   status               NotificationStatus @default(QUEUED)
   attemptCount         Int                @default(0)
@@ -593,6 +664,7 @@ model NotificationLog {
   recipientDriver    Driver?    @relation(fields: [recipientDriverId], references: [id])
 
   @@index([status])
+  @@index([deliveryChannel, status])
   @@index([createdAt])
 }
 

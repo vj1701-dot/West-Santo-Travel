@@ -187,7 +187,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
         </div>
       ) : null}
 
-      <div className="manager-toolbar">
+      <div className="row-card__title" style={{ alignItems: "end" }}>
         <label className="field" style={{ flex: 1 }}>
           <span>Search drivers</span>
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, phone, or airport" />
@@ -263,108 +263,54 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
         </form>
       ) : null}
 
-      <div className="desktop-only">
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Driver</th>
-              <th>Airports</th>
-              <th>Telegram</th>
-              <th>Actions</th>
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Driver</th>
+            <th>Airports</th>
+            <th>Telegram</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredDrivers.map((driver) => (
+            <tr key={driver.id}>
+              <td>
+                <strong>{driver.name}</strong>
+                <div className="muted-inline">{driver.phone ?? "No phone"}</div>
+              </td>
+              <td>{driver.airportCodes.join(", ") || "None"}</td>
+              <td>{driver.telegramChatId ? "Linked" : "Pending"}</td>
+              <td>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    className="button-secondary"
+                    type="button"
+                    onClick={() => {
+                      if (!window.confirm(`Open edit form for ${driver.name}?`)) {
+                        return;
+                      }
+                      setPanelMode("edit");
+                      setEditingDriverId(driver.id);
+                      setFormState(toFormState(driver));
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button className="button-secondary" type="button" onClick={() => void handleDelete(driver)}>
+                    Delete
+                  </button>
+                </div>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {filteredDrivers.map((driver) => (
-              <tr key={driver.id}>
-                <td>
-                  <strong>{driver.name}</strong>
-                  <div className="muted-inline">{driver.phone ?? "No phone"}</div>
-                </td>
-                <td>{driver.airportCodes.join(", ") || "None"}</td>
-                <td>{driver.telegramChatId ? "Linked" : "Pending"}</td>
-                <td>
-                  <div style={{ display: "flex", gap: "0.5rem" }}>
-                    <button
-                      className="button-secondary"
-                      type="button"
-                      onClick={() => {
-                        if (!window.confirm(`Open edit form for ${driver.name}?`)) {
-                          return;
-                        }
-                        setPanelMode("edit");
-                        setEditingDriverId(driver.id);
-                        setFormState(toFormState(driver));
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button className="button-secondary" type="button" onClick={() => void handleDelete(driver)}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {filteredDrivers.length === 0 ? (
-              <tr>
-                <td colSpan={4}>No drivers found.</td>
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mobile-only">
-        {filteredDrivers.length === 0 ? (
-          <div className="compact-card">
-            <p>No drivers found.</p>
-          </div>
-        ) : (
-          <div className="manager-list">
-            {filteredDrivers.map((driver) => (
-              <article key={driver.id} className="compact-card manager-card">
-                <div className="manager-card__header">
-                  <div>
-                    <strong>{driver.name}</strong>
-                    <div className="muted-inline">{driver.phone ?? "No phone"}</div>
-                  </div>
-                </div>
-                <div className="manager-card__body">
-                  <div className="manager-card__meta">
-                    <div>
-                      <span>Airports</span>
-                      <strong>{driver.airportCodes.join(", ") || "None"}</strong>
-                    </div>
-                    <div>
-                      <span>Telegram</span>
-                      <strong>{driver.telegramChatId ? "Linked" : "Pending"}</strong>
-                    </div>
-                  </div>
-                  <div className="manager-card__actions">
-                    <button
-                      className="button-secondary"
-                      type="button"
-                      onClick={() => {
-                        if (!window.confirm(`Open edit form for ${driver.name}?`)) {
-                          return;
-                        }
-                        setPanelMode("edit");
-                        setEditingDriverId(driver.id);
-                        setFormState(toFormState(driver));
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button className="button-secondary" type="button" onClick={() => void handleDelete(driver)}>
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
-        )}
-      </div>
+          ))}
+          {filteredDrivers.length === 0 ? (
+            <tr>
+              <td colSpan={4}>No drivers found.</td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
     </section>
   );
 }

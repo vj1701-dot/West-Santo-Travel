@@ -411,7 +411,6 @@ model Itinerary {
   flightSegments   FlightSegment[]
   accommodations   Accommodation[]
   transportTasks   TransportTask[]
-  externalSyncLinks ExternalSyncLink[]
   approvalRequests ApprovalRequest[]
   duplicateFlags   DuplicateFlag[]      @relation("DuplicateFlagPrimaryItinerary")
   relatedDuplicateFlags DuplicateFlag[]  @relation("DuplicateFlagRelatedItinerary")
@@ -419,25 +418,6 @@ model Itinerary {
   @@index([status])
   @@index([isArchived])
   @@index([createdByUserId])
-}
-
-model ExternalSyncLink {
-  id             String   @id @default(uuid()) @db.Uuid
-  provider       String
-  externalKey    String
-  itineraryId    String   @db.Uuid
-  lastSeenAt     DateTime @db.Timestamptz(6)
-  lastSyncedAt   DateTime @db.Timestamptz(6)
-  lastPayloadHash String?
-  sourceMetadata Json?
-  createdAt      DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt      DateTime @updatedAt @db.Timestamptz(6)
-
-  itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, externalKey])
-  @@unique([provider, itineraryId])
-  @@index([provider, lastSeenAt])
 }
 
 model ItineraryPassenger {
