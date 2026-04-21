@@ -8,6 +8,7 @@ COPY prisma ./prisma
 COPY packages ./packages
 COPY apps ./apps
 RUN npm install
+RUN npx prisma generate --schema prisma/schema.prisma
 RUN npm run build --workspace apps/web
 ENV NODE_ENV=production
 EXPOSE 3000
