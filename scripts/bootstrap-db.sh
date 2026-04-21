@@ -24,7 +24,10 @@ done
 echo "Checking if database has existing data..."
 TABLE_COUNT=$(psql "$DATABASE_URL" -t -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'")
 
-if [ "$TABLE_COUNT" -eq 0 ]; then
+# Trim whitespace from count
+TABLE_COUNT=$(echo $TABLE_COUNT | xargs)
+
+if [ -z "$TABLE_COUNT" ] || [ "$TABLE_COUNT" -eq 0 ]; then
   echo "No tables found - running full initialization (migrations + build + seed)..."
   
   # Run initial schema creation
@@ -42,11 +45,12 @@ if [ "$TABLE_COUNT" -eq 0 ]; then
   
   echo "✓ Database initialized successfully!"
 else
-  echo "Found existing tables - running migrations only..."
+  echo "Found $TABLE_COUNT existing tables - running migrations only..."
   
   # Only run migrations on existing database
   npx prisma migrate deploy --schema prisma/schema.prisma || {
-    echo "No pending migrations"
+    echo "No pending migrations or migrate deploy failed, attempting db push..."
+    npx prisma db push --schema prisma/schema.prisma
   }
   
   echo "✓ Migrations completed successfully!"
