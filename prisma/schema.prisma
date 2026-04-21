@@ -114,6 +114,11 @@ enum NotificationChannel {
   INTERNAL
 }
 
+enum ExternalSyncStatus {
+  IN_SYNC
+  REVIEW_REQUIRED
+}
+
 enum ReminderRunStatus {
   QUEUED
   SENT
@@ -422,16 +427,19 @@ model Itinerary {
 }
 
 model ExternalSyncLink {
-  id              String   @id @default(uuid()) @db.Uuid
-  provider        String
-  externalKey     String
-  itineraryId     String   @db.Uuid
-  lastSeenAt      DateTime @db.Timestamptz(6)
-  lastSyncedAt    DateTime @db.Timestamptz(6)
-  lastPayloadHash String?
-  sourceMetadata  Json?
-  createdAt       DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+  id               String             @id @default(uuid()) @db.Uuid
+  provider         String
+  externalKey      String
+  itineraryId      String             @db.Uuid
+  syncStatus       ExternalSyncStatus @default(IN_SYNC)
+  lastSeenAt       DateTime           @db.Timestamptz(6)
+  lastSyncedAt     DateTime           @db.Timestamptz(6)
+  lastPayloadHash  String?
+  sourceMetadata   Json?
+  pendingRosterDiff Json?
+  lastReviewDiffAt DateTime?          @db.Timestamptz(6)
+  createdAt        DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @db.Timestamptz(6)
 
   itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
 

@@ -1,6 +1,7 @@
 import {
   ApprovalStatus,
   AuditSource,
+  ExternalSyncStatus,
   ItineraryStatus,
   NotificationChannel,
   NotificationStatus,
@@ -108,6 +109,45 @@ type GoogleSheetsSnapshotInput = {
   trips: GoogleSheetsTripInput[];
 };
 
+type GoogleSheetsPassengerMatchStrategy = "exact_full" | "exact_swapped" | "fuzzy_full" | "fuzzy_swapped";
+type GoogleSheetsDriverMatchStrategy = "exact" | "fuzzy";
+
+type GoogleSheetsResolvedPassenger = {
+  passenger: {
+    id: string;
+    firstName: string;
+    lastName: string;
+  };
+  mode: "matched" | "created";
+  matchStrategy?: GoogleSheetsPassengerMatchStrategy | null;
+};
+
+type GoogleSheetsResolvedDriver = {
+  driver: {
+    id: string;
+    name: string;
+  };
+  mode: "matched" | "created";
+  matchStrategy?: GoogleSheetsDriverMatchStrategy | null;
+};
+
+type GoogleSheetsRosterSnapshot = {
+  passengerIds: string[];
+  passengers: Array<{ id: string; name: string }>;
+  pickupDriverId: string | null;
+  pickupDriverName: string | null;
+  dropoffDriverId: string | null;
+  dropoffDriverName: string | null;
+};
+
+type GoogleSheetsPendingRosterDiff = {
+  source: "google-sheets";
+  syncedAt: string;
+  sourceRows: number[];
+  current: GoogleSheetsRosterSnapshot;
+  proposed: GoogleSheetsRosterSnapshot;
+};
+
 const GOOGLE_SHEETS_SYNC_PROVIDER = "google-sheets";
 const GOOGLE_SHEETS_SYNC_ACTOR = "google-sheets-sync";
 const DEFAULT_SYNC_PASSENGER_TYPE = PassengerType.HARIBHAKTO;
@@ -148,6 +188,36 @@ function parseOptionalCost(value?: string | null) {
 
 function hashGoogleSheetsTripPayload(trip: GoogleSheetsTripInput) {
   return createHash("sha256").update(JSON.stringify(trip)).digest("hex");
+}
+
+function buildPassengerDisplayName(input: { firstName?: string | null; lastName?: string | null }) {
+  return `${normalizeSyncText(input.firstName)} ${normalizeSyncText(input.lastName)}`.trim() || "Unknown passenger";
+}
+
+function arraysEqualAsSets(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const leftSorted = [...left].sort();
+  const rightSorted = [...right].sort();
+  return leftSorted.every((value, index) => value === rightSorted[index]);
+}
+
+function pickConfidentMatch<T extends { score: number }>(entries: T[], threshold = 0.92) {
+  const scored = entries
+    .filter((entry) => entry.score >= threshold)
+    .sort((left, right) => right.score - left.score);
+
+  if (scored.length === 0) {
+    return null;
+  }
+
+  if (scored.length === 1) {
+    return scored[0];
+  }
+
+  return scored[0].score - scored[1].score >= 0.05 ? scored[0] : null;
 }
 
 function levenshteinDistance(source: string, target: string) {
@@ -1018,6 +1088,7 @@ export async function listItineraries(options?: ItineraryQueryOptions) {
       booking: true,
       accommodations: { include: { mandir: true } },
       approvalRequests: { orderBy: { requestedAt: "desc" } },
+      externalSyncLinks: true,
     },
   });
 }
@@ -1051,6 +1122,7 @@ export async function getItineraryDetail(id: string) {
       transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
       booking: { include: { allocations: { include: { passenger: true } } } },
       approvalRequests: { include: { requestedByUser: true, reviewedByUser: true }, orderBy: { requestedAt: "desc" } },
+      externalSyncLinks: true,
     },
   });
 }
@@ -1109,6 +1181,7 @@ async function findTripDetailOrThrow(tx: Prisma.TransactionClient, id: string) {
       booking: true,
       transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
       approvalRequests: { orderBy: { requestedAt: "desc" } },
+      externalSyncLinks: true,
     },
   });
 }
@@ -2406,6 +2479,10 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
       updated: 0,
       archived: 0,
       unarchived: 0,
+      reviewRequired: 0,
+      skippedChanges: 0,
+      autoCreatedPassengers: 0,
+      autoCreatedDrivers: 0,
     };
 
     for (const trip of input.trips) {
@@ -2421,6 +2498,7 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
       seenExternalKeys.add(externalKey);
       const existingLink = linksByExternalKey.get(externalKey);
       const payloadHash = hashGoogleSheetsTripPayload(trip);
+      const wasArchived = !!existingLink && (existingLink.itinerary.isArchived || existingLink.itinerary.status === ItineraryStatus.CANCELLED);
 
       let itineraryId = existingLink?.itineraryId ?? null;
 
@@ -2475,10 +2553,17 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
         });
       }
 
-      const passengerIds = await syncItineraryPassengersFromGoogleSheets(tx, {
-        itineraryId,
+      const resolvedPassengers = await resolveItineraryPassengersFromGoogleSheets(tx, {
         passengers: trip.passengers,
       });
+      summary.autoCreatedPassengers += resolvedPassengers.createdCount;
+
+      const resolvedDrivers = await resolveTransportAssignmentsFromGoogleSheets(tx, {
+        pickupDriverName: trip.pickupDriverName,
+        dropoffDriverName: trip.dropoffDriverName,
+      });
+      summary.autoCreatedDrivers += resolvedDrivers.createdCount;
+
       const segmentId = await syncFlightSegmentFromGoogleSheets(tx, {
         itineraryId,
         trip,
@@ -2488,11 +2573,83 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
         locatorNumber: trip.locatorNumber,
         cost: trip.cost,
       });
-      const driverAssignments = await syncTransportAssignmentsFromGoogleSheets(tx, {
-        itineraryId,
-        pickupDriverName: trip.pickupDriverName,
-        dropoffDriverName: trip.dropoffDriverName,
-      });
+
+      const proposedRoster = buildProposedGoogleSheetsRoster(resolvedPassengers, resolvedDrivers);
+
+      let appliedPassengerIds = proposedRoster.passengerIds;
+      let appliedPickupDriverId = proposedRoster.pickupDriverId;
+      let appliedDropoffDriverId = proposedRoster.dropoffDriverId;
+      let pendingReview = false;
+
+      if (!existingLink || wasArchived) {
+        await applyItineraryPassengersFromGoogleSheetsSnapshot(tx, {
+          itineraryId,
+          passengerIds: proposedRoster.passengerIds,
+        });
+        await syncTransportAssignmentsByDriverIds(tx, {
+          itineraryId,
+          pickupDriverId: proposedRoster.pickupDriverId,
+          dropoffDriverId: proposedRoster.dropoffDriverId,
+        });
+      } else {
+        const currentRoster = await loadCurrentGoogleSheetsRoster(tx, itineraryId);
+        const rosterMatches =
+          arraysEqualAsSets(currentRoster.passengerIds, proposedRoster.passengerIds) &&
+          currentRoster.pickupDriverId === proposedRoster.pickupDriverId &&
+          currentRoster.dropoffDriverId === proposedRoster.dropoffDriverId;
+
+        if (rosterMatches) {
+          await clearStagedGoogleSheetsRosterDiff(tx, existingLink.id, syncedAt, payloadHash, input.sheetName, trip);
+          if (existingLink.syncStatus === ExternalSyncStatus.REVIEW_REQUIRED) {
+            await createAuditLog(tx, {
+              action: "GOOGLE_SHEETS_ROSTER_DIFF_CLEARED",
+              entityType: "Itinerary",
+              entityId: itineraryId,
+              source: AuditSource.IMPORT,
+              oldValues: existingLink.pendingRosterDiff as Prisma.InputJsonValue | undefined,
+              newValues: {
+                source: GOOGLE_SHEETS_SYNC_ACTOR,
+                externalKey,
+              },
+            });
+          }
+          appliedPassengerIds = currentRoster.passengerIds;
+          appliedPickupDriverId = currentRoster.pickupDriverId;
+          appliedDropoffDriverId = currentRoster.dropoffDriverId;
+        } else {
+          const pendingDiff = buildPendingRosterDiff({
+            syncedAt,
+            sourceRows: trip.sourceRows ?? [],
+            current: currentRoster,
+            proposed: proposedRoster,
+          });
+          await stagePendingGoogleSheetsRosterDiff(
+            tx,
+            {
+              linkId: existingLink.id,
+              syncedAt,
+              payloadHash,
+              sheetName: input.sheetName,
+              trip,
+            },
+            pendingDiff,
+          );
+          await createAuditLog(tx, {
+            action: "GOOGLE_SHEETS_ROSTER_DIFF_STAGED",
+            entityType: "Itinerary",
+            entityId: itineraryId,
+            source: AuditSource.IMPORT,
+            oldValues: pendingDiff.current as unknown as Prisma.InputJsonValue,
+            newValues: pendingDiff.proposed as unknown as Prisma.InputJsonValue,
+          });
+          summary.reviewRequired += 1;
+          summary.skippedChanges += 1;
+          pendingReview = true;
+          appliedPassengerIds = currentRoster.passengerIds;
+          appliedPickupDriverId = currentRoster.pickupDriverId;
+          appliedDropoffDriverId = currentRoster.dropoffDriverId;
+        }
+      }
 
       if (existingLink) {
         await tx.externalSyncLink.update({
@@ -2506,12 +2663,15 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
             itineraryId,
             lastSeenAt: syncedAt,
             lastSyncedAt: syncedAt,
-            lastPayloadHash: payloadHash,
-            sourceMetadata: {
-              sheetName: input.sheetName,
-              sourceRows: trip.sourceRows ?? [],
-              locatorNumber: trip.locatorNumber ?? null,
-            },
+            ...(wasArchived
+              ? {
+                  syncStatus: ExternalSyncStatus.IN_SYNC,
+                  lastPayloadHash: payloadHash,
+                  sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, trip),
+                  pendingRosterDiff: Prisma.JsonNull,
+                  lastReviewDiffAt: null,
+                }
+              : {}),
           },
         });
       } else {
@@ -2520,14 +2680,11 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
             provider: GOOGLE_SHEETS_SYNC_PROVIDER,
             externalKey,
             itineraryId,
+            syncStatus: ExternalSyncStatus.IN_SYNC,
             lastSeenAt: syncedAt,
             lastSyncedAt: syncedAt,
             lastPayloadHash: payloadHash,
-            sourceMetadata: {
-              sheetName: input.sheetName,
-              sourceRows: trip.sourceRows ?? [],
-              locatorNumber: trip.locatorNumber ?? null,
-            },
+            sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, trip),
           },
         });
       }
@@ -2541,10 +2698,11 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
           source: GOOGLE_SHEETS_SYNC_ACTOR,
           externalKey,
           locatorNumber: trip.locatorNumber ?? null,
-          passengerIds,
+          passengerIds: appliedPassengerIds,
           segmentId,
-          pickupDriverId: driverAssignments.pickupDriverId,
-          dropoffDriverId: driverAssignments.dropoffDriverId,
+          pickupDriverId: appliedPickupDriverId,
+          dropoffDriverId: appliedDropoffDriverId,
+          pendingReview,
         },
       });
     }
@@ -2584,6 +2742,9 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
         where: { id: link.id },
         data: {
           lastSyncedAt: syncedAt,
+          syncStatus: ExternalSyncStatus.IN_SYNC,
+          pendingRosterDiff: Prisma.JsonNull,
+          lastReviewDiffAt: null,
         },
       });
     }
@@ -2594,6 +2755,90 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
       processedTrips: input.trips.length,
       ...summary,
     };
+  });
+}
+
+function buildGoogleSheetsSourceMetadata(sheetName: string, trip: GoogleSheetsTripInput) {
+  return {
+    sheetName,
+    sourceRows: trip.sourceRows ?? [],
+    locatorNumber: trip.locatorNumber ?? null,
+  };
+}
+
+function buildProposedGoogleSheetsRoster(
+  passengers: Awaited<ReturnType<typeof resolveItineraryPassengersFromGoogleSheets>>,
+  drivers: Awaited<ReturnType<typeof resolveTransportAssignmentsFromGoogleSheets>>,
+): GoogleSheetsRosterSnapshot {
+  return {
+    passengerIds: passengers.passengerIds,
+    passengers: passengers.passengers,
+    pickupDriverId: drivers.pickupDriverId,
+    pickupDriverName: drivers.pickupDriverName,
+    dropoffDriverId: drivers.dropoffDriverId,
+    dropoffDriverName: drivers.dropoffDriverName,
+  };
+}
+
+function buildPendingRosterDiff(input: {
+  syncedAt: Date;
+  sourceRows: number[];
+  current: GoogleSheetsRosterSnapshot;
+  proposed: GoogleSheetsRosterSnapshot;
+}): GoogleSheetsPendingRosterDiff {
+  return {
+    source: "google-sheets",
+    syncedAt: input.syncedAt.toISOString(),
+    sourceRows: input.sourceRows,
+    current: input.current,
+    proposed: input.proposed,
+  };
+}
+
+async function stagePendingGoogleSheetsRosterDiff(
+  tx: Prisma.TransactionClient,
+  input: {
+    linkId: string;
+    syncedAt: Date;
+    payloadHash: string;
+    sheetName: string;
+    trip: GoogleSheetsTripInput;
+  },
+  pendingDiff: GoogleSheetsPendingRosterDiff,
+) {
+  await tx.externalSyncLink.update({
+    where: { id: input.linkId },
+    data: {
+      syncStatus: ExternalSyncStatus.REVIEW_REQUIRED,
+      lastSeenAt: input.syncedAt,
+      lastSyncedAt: input.syncedAt,
+      lastPayloadHash: input.payloadHash,
+      sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, input.trip),
+      pendingRosterDiff: pendingDiff as unknown as Prisma.InputJsonValue,
+      lastReviewDiffAt: input.syncedAt,
+    },
+  });
+}
+
+async function clearStagedGoogleSheetsRosterDiff(
+  tx: Prisma.TransactionClient,
+  linkId: string,
+  syncedAt: Date,
+  payloadHash: string,
+  sheetName: string,
+  trip: GoogleSheetsTripInput,
+) {
+  await tx.externalSyncLink.update({
+    where: { id: linkId },
+    data: {
+      syncStatus: ExternalSyncStatus.IN_SYNC,
+      lastSeenAt: syncedAt,
+      lastSyncedAt: syncedAt,
+      lastPayloadHash: payloadHash,
+      sourceMetadata: buildGoogleSheetsSourceMetadata(sheetName, trip),
+      pendingRosterDiff: Prisma.JsonNull,
+      lastReviewDiffAt: null,
+    },
   });
 }
 
@@ -2627,6 +2872,7 @@ async function findPassengerBySyncedName(
   input: { firstName: string; lastName: string },
 ) {
   const normalizedTarget = normalizeSyncPersonName(input.firstName, input.lastName);
+  const normalizedSwappedTarget = normalizeSyncPersonName(input.lastName, input.firstName);
   if (!normalizedTarget) {
     return null;
   }
@@ -2635,13 +2881,63 @@ async function findPassengerBySyncedName(
     where: { isActive: true },
   });
 
-  const exactMatches = candidates.filter((passenger) => {
+  const exactFullMatches = candidates.filter((passenger) => {
     const normalizedPassengerName = normalizeSyncPersonName(passenger.firstName, passenger.lastName);
     const normalizedLegalName = normalizeSyncName(passenger.legalName);
     return normalizedPassengerName === normalizedTarget || normalizedLegalName === normalizedTarget;
   });
+  if (exactFullMatches.length === 1) {
+    return {
+      passenger: exactFullMatches[0],
+      strategy: "exact_full" as const,
+    };
+  }
 
-  return exactMatches.length === 1 ? exactMatches[0] : null;
+  const exactSwappedMatches = candidates.filter((passenger) => {
+    const normalizedPassengerName = normalizeSyncPersonName(passenger.firstName, passenger.lastName);
+    const normalizedLegalName = normalizeSyncName(passenger.legalName);
+    return normalizedPassengerName === normalizedSwappedTarget || normalizedLegalName === normalizedSwappedTarget;
+  });
+  if (exactSwappedMatches.length === 1) {
+    return {
+      passenger: exactSwappedMatches[0],
+      strategy: "exact_swapped" as const,
+    };
+  }
+
+  const fuzzyFullMatch = pickConfidentMatch(
+    candidates.map((passenger) => ({
+      passenger,
+      score: Math.max(
+        getSimilarityScore(normalizeSyncPersonName(passenger.firstName, passenger.lastName), normalizedTarget),
+        getSimilarityScore(normalizeSyncName(passenger.legalName), normalizedTarget),
+      ),
+    })),
+  );
+  if (fuzzyFullMatch) {
+    return {
+      passenger: fuzzyFullMatch.passenger,
+      strategy: "fuzzy_full" as const,
+    };
+  }
+
+  const fuzzySwappedMatch = pickConfidentMatch(
+    candidates.map((passenger) => ({
+      passenger,
+      score: Math.max(
+        getSimilarityScore(normalizeSyncPersonName(passenger.firstName, passenger.lastName), normalizedSwappedTarget),
+        getSimilarityScore(normalizeSyncName(passenger.legalName), normalizedSwappedTarget),
+      ),
+    })),
+  );
+  if (fuzzySwappedMatch) {
+    return {
+      passenger: fuzzySwappedMatch.passenger,
+      strategy: "fuzzy_swapped" as const,
+    };
+  }
+
+  return null;
 }
 
 async function createPassengerForGoogleSheetsSync(
@@ -2678,12 +2974,31 @@ async function ensurePassengerForGoogleSheetsSync(
 ) {
   const matched = await findPassengerBySyncedName(tx, input);
   if (matched) {
-    return { passenger: matched, mode: "matched" as const };
+    if (matched.strategy !== "exact_full") {
+      await createAuditLog(tx, {
+        action: "PASSENGER_MATCHED_FROM_GOOGLE_SHEETS",
+        entityType: "Passenger",
+        entityId: matched.passenger.id,
+        source: AuditSource.IMPORT,
+        newValues: {
+          source: GOOGLE_SHEETS_SYNC_ACTOR,
+          strategy: matched.strategy,
+          sheetName: buildPassengerDisplayName(input),
+        },
+      });
+    }
+
+    return {
+      passenger: matched.passenger,
+      mode: "matched" as const,
+      matchStrategy: matched.strategy,
+    };
   }
 
   return {
     passenger: await createPassengerForGoogleSheetsSync(tx, input),
     mode: "created" as const,
+    matchStrategy: null,
   };
 }
 
@@ -2700,23 +3015,28 @@ async function findDriverBySyncedName(tx: Prisma.TransactionClient, name: string
     },
   });
 
-  const scored = drivers
-    .map((driver) => ({
+  const exactMatches = drivers.filter((driver) => normalizeSyncName(driver.name) === normalizedTarget);
+  if (exactMatches.length === 1) {
+    return {
+      driver: exactMatches[0],
+      strategy: "exact" as const,
+    };
+  }
+
+  const fuzzyMatch = pickConfidentMatch(
+    drivers.map((driver) => ({
       driver,
       score: getSimilarityScore(normalizeSyncName(driver.name), normalizedTarget),
-    }))
-    .filter((entry) => entry.score >= 0.92)
-    .sort((left, right) => right.score - left.score);
-
-  if (scored.length === 0) {
+    })),
+  );
+  if (!fuzzyMatch) {
     return null;
   }
 
-  if (scored.length === 1) {
-    return scored[0].driver;
-  }
-
-  return scored[0].score - scored[1].score >= 0.05 ? scored[0].driver : null;
+  return {
+    driver: fuzzyMatch.driver,
+    strategy: "fuzzy" as const,
+  };
 }
 
 async function createDriverForGoogleSheetsSync(tx: Prisma.TransactionClient, name: string) {
@@ -2752,12 +3072,31 @@ async function ensureDriverForGoogleSheetsSync(tx: Prisma.TransactionClient, nam
 
   const matched = await findDriverBySyncedName(tx, normalizedName);
   if (matched) {
-    return { driver: matched, mode: "matched" as const };
+    if (matched.strategy !== "exact") {
+      await createAuditLog(tx, {
+        action: "DRIVER_MATCHED_FROM_GOOGLE_SHEETS",
+        entityType: "Driver",
+        entityId: matched.driver.id,
+        source: AuditSource.IMPORT,
+        newValues: {
+          source: GOOGLE_SHEETS_SYNC_ACTOR,
+          strategy: matched.strategy,
+          name: normalizedName,
+        },
+      });
+    }
+
+    return {
+      driver: matched.driver,
+      mode: "matched" as const,
+      matchStrategy: matched.strategy,
+    };
   }
 
   return {
     driver: await createDriverForGoogleSheetsSync(tx, normalizedName),
     mode: "created" as const,
+    matchStrategy: null,
   };
 }
 
@@ -2801,10 +3140,9 @@ async function upsertBookingFromGoogleSheetsSync(
   });
 }
 
-async function syncItineraryPassengersFromGoogleSheets(
+async function resolveItineraryPassengersFromGoogleSheets(
   tx: Prisma.TransactionClient,
   input: {
-    itineraryId: string;
     passengers: GoogleSheetsPassengerInput[];
   },
 ) {
@@ -2817,20 +3155,45 @@ async function syncItineraryPassengersFromGoogleSheets(
     ),
   );
 
-  const passengerIds = Array.from(new Set(resolvedPassengers.map((entry) => entry.passenger.id)));
+  const passengerMap = new Map<string, { id: string; name: string }>();
+  let createdCount = 0;
 
+  for (const entry of resolvedPassengers) {
+    passengerMap.set(entry.passenger.id, {
+      id: entry.passenger.id,
+      name: buildPassengerDisplayName(entry.passenger),
+    });
+    if (entry.mode === "created") {
+      createdCount += 1;
+    }
+  }
+
+  return {
+    passengerIds: Array.from(passengerMap.keys()),
+    passengers: Array.from(passengerMap.values()),
+    createdCount,
+  };
+}
+
+async function applyItineraryPassengersFromGoogleSheetsSnapshot(
+  tx: Prisma.TransactionClient,
+  input: {
+    itineraryId: string;
+    passengerIds: string[];
+  },
+) {
   await tx.itineraryPassenger.deleteMany({
     where: { itineraryId: input.itineraryId },
   });
 
-  await tx.itineraryPassenger.createMany({
-    data: passengerIds.map((passengerId) => ({
-      itineraryId: input.itineraryId,
-      passengerId,
-    })),
-  });
-
-  return passengerIds;
+  if (input.passengerIds.length > 0) {
+    await tx.itineraryPassenger.createMany({
+      data: input.passengerIds.map((passengerId) => ({
+        itineraryId: input.itineraryId,
+        passengerId,
+      })),
+    });
+  }
 }
 
 async function syncTransportTaskDriverAssignments(
@@ -2877,24 +3240,20 @@ async function syncTransportTaskDriverAssignments(
   });
 }
 
-async function syncTransportAssignmentsFromGoogleSheets(
+async function syncTransportAssignmentsByDriverIds(
   tx: Prisma.TransactionClient,
   input: {
     itineraryId: string;
-    pickupDriverName?: string | null;
-    dropoffDriverName?: string | null;
+    pickupDriverId?: string | null;
+    dropoffDriverId?: string | null;
   },
 ) {
-  const [pickupDriver, dropoffDriver, tasks] = await Promise.all([
-    ensureDriverForGoogleSheetsSync(tx, input.pickupDriverName),
-    ensureDriverForGoogleSheetsSync(tx, input.dropoffDriverName),
-    tx.transportTask.findMany({
-      where: { itineraryId: input.itineraryId },
-      include: {
-        drivers: { include: { driver: true } },
-      },
-    }),
-  ]);
+  const tasks = await tx.transportTask.findMany({
+    where: { itineraryId: input.itineraryId },
+    include: {
+      drivers: { include: { driver: true } },
+    },
+  });
 
   const pickupTask = tasks.find((task) => task.taskType === TransportTaskType.PICKUP);
   const dropoffTask = tasks.find((task) => task.taskType === TransportTaskType.DROPOFF);
@@ -2902,21 +3261,136 @@ async function syncTransportAssignmentsFromGoogleSheets(
   if (pickupTask) {
     await syncTransportTaskDriverAssignments(tx, {
       taskId: pickupTask.id,
-      driverIds: pickupDriver ? [pickupDriver.driver.id] : [],
+      driverIds: input.pickupDriverId ? [input.pickupDriverId] : [],
     });
   }
 
   if (dropoffTask) {
     await syncTransportTaskDriverAssignments(tx, {
       taskId: dropoffTask.id,
-      driverIds: dropoffDriver ? [dropoffDriver.driver.id] : [],
+      driverIds: input.dropoffDriverId ? [input.dropoffDriverId] : [],
     });
   }
 
   return {
-    pickupDriverId: pickupDriver?.driver.id ?? null,
-    dropoffDriverId: dropoffDriver?.driver.id ?? null,
+    pickupDriverId: input.pickupDriverId ?? null,
+    dropoffDriverId: input.dropoffDriverId ?? null,
   };
+}
+
+async function resolveTransportAssignmentsFromGoogleSheets(
+  tx: Prisma.TransactionClient,
+  input: {
+    pickupDriverName?: string | null;
+    dropoffDriverName?: string | null;
+  },
+) {
+  const [pickupDriver, dropoffDriver] = await Promise.all([
+    ensureDriverForGoogleSheetsSync(tx, input.pickupDriverName),
+    ensureDriverForGoogleSheetsSync(tx, input.dropoffDriverName),
+  ]);
+
+  return {
+    pickupDriverId: pickupDriver?.driver.id ?? null,
+    pickupDriverName: pickupDriver?.driver.name ?? (normalizeSyncText(input.pickupDriverName) || null),
+    dropoffDriverId: dropoffDriver?.driver.id ?? null,
+    dropoffDriverName: dropoffDriver?.driver.name ?? (normalizeSyncText(input.dropoffDriverName) || null),
+    createdCount: [pickupDriver, dropoffDriver].filter((entry) => entry?.mode === "created").length,
+  };
+}
+
+async function loadCurrentGoogleSheetsRoster(tx: Prisma.TransactionClient, itineraryId: string): Promise<GoogleSheetsRosterSnapshot> {
+  const itinerary = await tx.itinerary.findUniqueOrThrow({
+    where: { id: itineraryId },
+    include: {
+      itineraryPassengers: {
+        include: {
+          passenger: true,
+        },
+      },
+      transportTasks: {
+        include: {
+          drivers: {
+            include: {
+              driver: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const pickupDrivers = itinerary.transportTasks
+    .filter((task) => task.taskType === TransportTaskType.PICKUP)
+    .flatMap((task) => task.drivers.map((entry) => entry.driver));
+  const dropoffDrivers = itinerary.transportTasks
+    .filter((task) => task.taskType === TransportTaskType.DROPOFF)
+    .flatMap((task) => task.drivers.map((entry) => entry.driver));
+
+  return {
+    passengerIds: itinerary.itineraryPassengers.map((entry) => entry.passenger.id),
+    passengers: itinerary.itineraryPassengers.map((entry) => ({
+      id: entry.passenger.id,
+      name: buildPassengerDisplayName(entry.passenger),
+    })),
+    pickupDriverId: pickupDrivers[0]?.id ?? null,
+    pickupDriverName: pickupDrivers[0]?.name ?? null,
+    dropoffDriverId: dropoffDrivers[0]?.id ?? null,
+    dropoffDriverName: dropoffDrivers[0]?.name ?? null,
+  };
+}
+
+export async function applyGoogleSheetsTravelerChanges(itineraryId: string, actorUserId?: string | null) {
+  return prisma.$transaction(async (tx) => {
+    const syncLink = await tx.externalSyncLink.findFirst({
+      where: {
+        provider: GOOGLE_SHEETS_SYNC_PROVIDER,
+        itineraryId,
+      },
+    });
+
+    if (!syncLink || syncLink.syncStatus !== ExternalSyncStatus.REVIEW_REQUIRED || !syncLink.pendingRosterDiff) {
+      throw new Error("No pending Google Sheets traveler changes were found for this itinerary.");
+    }
+
+    const pendingDiff = syncLink.pendingRosterDiff as GoogleSheetsPendingRosterDiff;
+    const proposed = pendingDiff?.proposed;
+
+    if (!proposed || !Array.isArray(proposed.passengerIds)) {
+      throw new Error("The pending Google Sheets traveler diff is invalid.");
+    }
+
+    await applyItineraryPassengersFromGoogleSheetsSnapshot(tx, {
+      itineraryId,
+      passengerIds: proposed.passengerIds,
+    });
+    await syncTransportAssignmentsByDriverIds(tx, {
+      itineraryId,
+      pickupDriverId: proposed.pickupDriverId,
+      dropoffDriverId: proposed.dropoffDriverId,
+    });
+
+    await tx.externalSyncLink.update({
+      where: { id: syncLink.id },
+      data: {
+        syncStatus: ExternalSyncStatus.IN_SYNC,
+        pendingRosterDiff: Prisma.JsonNull,
+        lastReviewDiffAt: null,
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "GOOGLE_SHEETS_ROSTER_DIFF_APPLIED",
+      entityType: "Itinerary",
+      entityId: itineraryId,
+      actorUserId: actorUserId ?? null,
+      source: AuditSource.WEB,
+      oldValues: pendingDiff.current as unknown as Prisma.InputJsonValue,
+      newValues: pendingDiff.proposed as unknown as Prisma.InputJsonValue,
+    });
+
+    return findTripDetailOrThrow(tx, itineraryId);
+  });
 }
 
 async function syncFlightSegmentFromGoogleSheets(

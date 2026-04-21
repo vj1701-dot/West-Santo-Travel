@@ -43,6 +43,11 @@ type ItineraryRecord = {
     id: string;
     status: string;
   }>;
+  externalSyncLinks: Array<{
+    id: string;
+    provider: string;
+    syncStatus: string;
+  }>;
 };
 
 function formatDateTime(value: Date) {
@@ -81,6 +86,9 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
               const pickupTasks = itinerary.transportTasks.filter((task) => task.taskType === "PICKUP");
               const dropoffTasks = itinerary.transportTasks.filter((task) => task.taskType === "DROPOFF");
               const accommodationNotes = itinerary.accommodations.map((item) => item.notes).filter(Boolean);
+              const googleSheetsReviewRequired = itinerary.externalSyncLinks.some(
+                (link) => link.provider === "google-sheets" && link.syncStatus === "REVIEW_REQUIRED",
+              );
 
               return (
                 <article
@@ -106,6 +114,11 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                       <span className="pill">{itinerary.status}</span>
+                      {role !== "PASSENGER" && googleSheetsReviewRequired ? (
+                        <span className="pill" style={{ background: "rgba(217, 119, 6, 0.12)", color: "rgb(146, 64, 14)" }}>
+                          Sync review required
+                        </span>
+                      ) : null}
                       {role !== "PASSENGER" ? (
                         <Link className="button-secondary" href={`/itineraries/${itinerary.id}/edit`}>
                           Edit

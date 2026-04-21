@@ -111,6 +111,7 @@ Implemented now:
 - Built-in notification workflows plus configurable reminder rule CRUD
 - Telegram phone/contact linking, `/upcoming`, and queued notification dispatch
 - Twilio SMS dispatch for passenger and driver notifications
+- Google Sheets snapshot sync with automatic flight updates and review-required traveler or driver roster changes on existing synced trips
 
 Partially implemented or intentionally deferred:
 
@@ -467,6 +468,9 @@ Those submissions are stored for admin/coordinator review. Staff then opens the 
 - Set `GOOGLE_SHEETS_SYNC_SECRET` in the app environment and send the same value in the `x-sync-secret` header from Apps Script.
 - The checked-in Apps Script starter file is [scripts/google-sheets-sync.gs](/Users/sadhuvinamrajivandas/West Santo Travel /scripts/google-sheets-sync.gs).
 - The sync is intended for one-row-per-passenger sheets and groups rows into trips before pushing them into the app.
+- For already-synced trips, flight and locator changes apply automatically from the sheet.
+- Passenger and driver database records stay app-owned; the sync uses conservative fuzzy matching for minor sheet-name errors and does not rename stored records.
+- If an existing synced trip’s traveler or pickup/dropoff driver roster differs from the sheet, the app stages that change for review instead of auto-applying it. Staff can approve the staged roster from the itinerary edit screen.
 - Missing trips from the latest sheet snapshot are archived as cancelled itineraries instead of being deleted.
 
 ## Known Gaps And Next Useful Slices

@@ -26,7 +26,8 @@ function syncWestSantoSheet() {
     throw new Error('Sheet "' + SHEET_NAME + '" was not found.');
   }
 
-  const rows = readSheetRows_(sheet);
+  const readResult = readSheetRows_(sheet);
+  const rows = readResult.rows;
   const trips = groupRowsIntoTrips_(rows);
   const snapshot = {
     source: "google-sheets",
@@ -37,6 +38,10 @@ function syncWestSantoSheet() {
 
   const response = postSnapshot_(snapshot);
   Logger.log("Google Sheets sync completed. Trips: " + trips.length + ", status: " + response.status);
+  Logger.log("Rows processed: " + rows.length + ", skipped: " + readResult.skippedRows.length);
+  if (readResult.skippedRows.length > 0) {
+    Logger.log("Skipped rows: " + JSON.stringify(readResult.skippedRows));
+  }
   Logger.log(response.body);
 }
 
@@ -54,12 +59,17 @@ function installHourlyTrigger() {
 function readSheetRows_(sheet) {
   const values = sheet.getDataRange().getDisplayValues();
   if (values.length < 2) {
-    return [];
+    return {
+      rows: [],
+      skippedRows: [],
+    };
   }
 
   const headers = values[0];
   const headerMap = normalizeHeaderMap_(headers);
   const rows = [];
+  const skippedRows = [];
+  let lastTripContext = null;
 
   for (var index = 1; index < values.length; index += 1) {
     const row = values[index];
@@ -67,13 +77,25 @@ function readSheetRows_(sheet) {
       continue;
     }
 
-    const normalizedRow = normalizeRow_(row, headerMap, index + 1);
-    if (normalizedRow) {
-      rows.push(normalizedRow);
+    try {
+      const normalizedRow = normalizeRow_(row, headerMap, index + 1, lastTripContext);
+      if (normalizedRow) {
+        rows.push(normalizedRow);
+        lastTripContext = buildTripContext_(normalizedRow);
+      }
+    } catch (error) {
+      skippedRows.push({
+        rowNumber: index + 1,
+        reason: error && error.message ? error.message : String(error),
+      });
+      Logger.log("Skipping row " + (index + 1) + ": " + (error && error.message ? error.message : String(error)));
     }
   }
 
-  return rows;
+  return {
+    rows: rows,
+    skippedRows: skippedRows,
+  };
 }
 
 function normalizeHeaderMap_(headers) {
@@ -91,7 +113,7 @@ function normalizeHeaderMap_(headers) {
   return headerMap;
 }
 
-function normalizeRow_(row, headerMap, sheetRowNumber) {
+function normalizeRow_(row, headerMap, sheetRowNumber, lastTripContext) {
   const locatorNumber = normalizeText_(row[headerMap["Locator Number"]]);
   const airline = normalizeText_(row[headerMap["Airline"]]);
   const flightNumber = normalizeText_(row[headerMap["Flight #"]]).toUpperCase();
@@ -106,6 +128,18 @@ function normalizeRow_(row, headerMap, sheetRowNumber) {
   const departureTimeRaw = normalizeText_(row[headerMap["Dep Time"]]);
   const arrivalDateRaw = normalizeText_(row[headerMap["Arrival Date"]]);
   const arrivalTimeRaw = normalizeText_(row[headerMap["Arrival Time"]]);
+  const hasTripFields =
+    !!locatorNumber ||
+    !!airline ||
+    !!flightNumber ||
+    !!departureAirport ||
+    !!departureDateRaw ||
+    !!departureTimeRaw ||
+    !!arrivalAirport ||
+    !!arrivalDateRaw ||
+    !!arrivalTimeRaw;
+  const hasPassengerFields = !!firstName || !!lastName;
+  const canReuseLastTripContext = !hasTripFields && hasPassengerFields && !!lastTripContext;
 
   if (
     !locatorNumber &&
@@ -126,24 +160,60 @@ function normalizeRow_(row, headerMap, sheetRowNumber) {
     return null;
   }
 
-  const departureDate = departureDateRaw ? normalizeDate_(departureDateRaw) : "";
-  const departureTime = departureTimeRaw ? normalizeTime_(departureTimeRaw) : "";
-  const arrivalDate = arrivalDateRaw ? normalizeDate_(arrivalDateRaw) : "";
-  const arrivalTime = arrivalTimeRaw ? normalizeTime_(arrivalTimeRaw) : "";
+  const resolvedLocatorNumber = locatorNumber || (canReuseLastTripContext ? lastTripContext.locatorNumber : "") || null;
+  const resolvedAirline = airline || (canReuseLastTripContext ? lastTripContext.airline : "");
+  const resolvedFlightNumber = flightNumber || (canReuseLastTripContext ? lastTripContext.flightNumber : "");
+  const resolvedDepartureAirport = departureAirport || (canReuseLastTripContext ? lastTripContext.departureAirport : "");
+  const resolvedArrivalAirport = arrivalAirport || (canReuseLastTripContext ? lastTripContext.arrivalAirport : "");
+  const departureDate = departureDateRaw
+    ? normalizeDate_(departureDateRaw)
+    : canReuseLastTripContext
+      ? lastTripContext.departureDate
+      : "";
+  const departureTime = departureTimeRaw
+    ? normalizeTime_(departureTimeRaw)
+    : canReuseLastTripContext
+      ? lastTripContext.departureTime
+      : "";
+  const arrivalDate = arrivalDateRaw
+    ? normalizeDate_(arrivalDateRaw)
+    : canReuseLastTripContext
+      ? lastTripContext.arrivalDate
+      : "";
+  const arrivalTime = arrivalTimeRaw
+    ? normalizeTime_(arrivalTimeRaw)
+    : canReuseLastTripContext
+      ? lastTripContext.arrivalTime
+      : "";
 
-  if (!airline || !flightNumber || !departureAirport || !departureDate || !departureTime || !arrivalAirport || !arrivalDate || !arrivalTime || !firstName || !lastName) {
-    throw new Error("Row " + sheetRowNumber + " is missing required trip or passenger data.");
+  if (
+    !resolvedAirline ||
+    !resolvedFlightNumber ||
+    !resolvedDepartureAirport ||
+    !departureDate ||
+    !departureTime ||
+    !resolvedArrivalAirport ||
+    !arrivalDate ||
+    !arrivalTime ||
+    !firstName ||
+    !lastName
+  ) {
+    throw new Error(
+      "Row " +
+        sheetRowNumber +
+        " is missing required trip or passenger data. Fill in the row completely, or leave the flight columns blank only for continuation passenger rows immediately under the same trip."
+    );
   }
 
   return {
     sheetRowNumber: sheetRowNumber,
-    locatorNumber: locatorNumber || null,
-    airline: airline,
-    flightNumber: flightNumber,
-    departureAirport: departureAirport,
+    locatorNumber: resolvedLocatorNumber,
+    airline: resolvedAirline,
+    flightNumber: resolvedFlightNumber,
+    departureAirport: resolvedDepartureAirport,
     departureDate: departureDate,
     departureTime: departureTime,
-    arrivalAirport: arrivalAirport,
+    arrivalAirport: resolvedArrivalAirport,
     arrivalDate: arrivalDate,
     arrivalTime: arrivalTime,
     firstName: firstName,
@@ -151,6 +221,20 @@ function normalizeRow_(row, headerMap, sheetRowNumber) {
     cost: cost,
     dropoffDriverName: dropoffDriverName,
     pickupDriverName: pickupDriverName,
+  };
+}
+
+function buildTripContext_(row) {
+  return {
+    locatorNumber: row.locatorNumber || "",
+    airline: row.airline,
+    flightNumber: row.flightNumber,
+    departureAirport: row.departureAirport,
+    departureDate: row.departureDate,
+    departureTime: row.departureTime,
+    arrivalAirport: row.arrivalAirport,
+    arrivalDate: row.arrivalDate,
+    arrivalTime: row.arrivalTime,
   };
 }
 
