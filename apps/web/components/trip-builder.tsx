@@ -103,6 +103,12 @@ type TravelerRef = {
   entityId: string;
 };
 
+type TravelerQuickAddForm = {
+  firstName: string;
+  lastName: string;
+  phone: string;
+};
+
 function generateId(prefix: string) {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return `${prefix}-${globalThis.crypto.randomUUID()}`;
@@ -145,6 +151,23 @@ function createSegment(airports: AirportChoice[], source?: InitialTripData["segm
   };
 }
 
+function buildFullName(firstName: string, lastName: string) {
+  return `${firstName} ${lastName}`.trim();
+}
+
+function parseTravelerName(query: string): Pick<TravelerQuickAddForm, "firstName" | "lastName"> {
+  const trimmed = query.trim().replace(/\s+/g, " ");
+  if (!trimmed) {
+    return { firstName: "", lastName: "" };
+  }
+
+  const [firstName, ...rest] = trimmed.split(" ");
+  return {
+    firstName: firstName ?? "",
+    lastName: rest.join(" ").trim(),
+  };
+}
+
 export function TripBuilder({
   passengers,
   users,
@@ -159,10 +182,16 @@ export function TripBuilder({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
+  const [passengerOptions, setPassengerOptions] = useState<PassengerOption[]>(passengers);
   const [selectedPassengerIds, setSelectedPassengerIds] = useState<string[]>(initialTrip?.passengerIds ?? []);
   const [selectedTravelerRefs, setSelectedTravelerRefs] = useState<TravelerRef[]>(initialTrip?.travelerRefs ?? []);
-  const [passengerQuery, setPassengerQuery] = useState("");
   const [travelerQuery, setTravelerQuery] = useState("");
+  const [isTravelerQuickAddOpen, setIsTravelerQuickAddOpen] = useState(false);
+  const [travelerQuickAddForm, setTravelerQuickAddForm] = useState<TravelerQuickAddForm>({
+    firstName: "",
+    lastName: "",
+    phone: "",
+  });
   const [segments, setSegments] = useState<SegmentState[]>(
     initialTrip?.segments?.length ? initialTrip.segments.map((segment) => createSegment(airports, segment)) : [createSegment(airports)],
   );
@@ -176,16 +205,21 @@ export function TripBuilder({
   const [newDriverNotes, setNewDriverNotes] = useState("");
   const [driverOptions, setDriverOptions] = useState<DriverOption[]>(drivers);
 
-  const passengerOptions: SearchOption[] = useMemo(
-    () => passengers.map((passenger) => ({ id: passenger.id, label: passenger.label, detail: passenger.detail })),
-    [passengers],
-  );
+  const passengerOptionMap = useMemo(() => new Map(passengerOptions.map((passenger) => [passenger.id, passenger])), [passengerOptions]);
   const userOptionMap = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
   const driverOptionMap = useMemo(() => new Map(driverOptions.map((driver) => [driver.id, driver])), [driverOptions]);
-  const selectedPassengers = passengers.filter((passenger) => selectedPassengerIds.includes(passenger.id));
-  const availablePassengerOptions = passengerOptions.filter((passenger) => !selectedPassengerIds.includes(passenger.id));
-  const selectedTravelerKeys = new Set(selectedTravelerRefs.map((ref) => `${ref.entityType}:${ref.entityId}`));
+  const selectedTravelerKeys = new Set([
+    ...selectedPassengerIds.map((passengerId) => `PASSENGER:${passengerId}`),
+    ...selectedTravelerRefs.map((ref) => `${ref.entityType}:${ref.entityId}`),
+  ]);
   const availableTravelerOptions: SearchOption[] = [
+    ...passengerOptions
+      .filter((passenger) => !selectedTravelerKeys.has(`PASSENGER:${passenger.id}`))
+      .map((passenger) => ({
+        id: `PASSENGER:${passenger.id}`,
+        label: passenger.label,
+        detail: ["Passenger", passenger.detail].filter(Boolean).join(" · "),
+      })),
     ...users
       .filter((user) => !selectedTravelerKeys.has(`USER:${user.id}`))
       .map((user) => ({
@@ -201,23 +235,25 @@ export function TripBuilder({
         detail: ["Driver", driver.phone, driver.airportCodes?.join(", ")].filter(Boolean).join(" · "),
       })),
   ];
-  const selectedExtraTravelers = selectedTravelerRefs.map((ref) => {
-    if (ref.entityType === "USER") {
-      const user = userOptionMap.get(ref.entityId);
-      return {
-        key: `USER:${ref.entityId}`,
-        label: user?.label ?? "Unknown user",
-        prefix: "User",
-      };
-    }
+  const selectedTravelers = [
+    ...selectedPassengerIds.map((passengerId) => ({
+      key: `PASSENGER:${passengerId}`,
+      label: passengerOptionMap.get(passengerId)?.label ?? "Unknown traveler",
+    })),
+    ...selectedTravelerRefs.map((ref) => {
+      if (ref.entityType === "USER") {
+        return {
+          key: `USER:${ref.entityId}`,
+          label: userOptionMap.get(ref.entityId)?.label ?? "Unknown traveler",
+        };
+      }
 
-    const driver = driverOptionMap.get(ref.entityId);
-    return {
-      key: `DRIVER:${ref.entityId}`,
-      label: driver?.name ?? "Unknown driver",
-      prefix: "Driver",
-    };
-  });
+      return {
+        key: `DRIVER:${ref.entityId}`,
+        label: driverOptionMap.get(ref.entityId)?.name ?? "Unknown traveler",
+      };
+    }),
+  ];
   const airlineOptions = AIRLINE_OPTIONS.map((airline) => ({ id: airline, label: airline }));
   const driverSearchOptions = driverOptions.map((driver) => ({
     id: driver.id,
@@ -245,6 +281,104 @@ export function TripBuilder({
         };
       }),
     );
+  }
+
+  function updateTravelerQuickAddField<Key extends keyof TravelerQuickAddForm>(key: Key, value: TravelerQuickAddForm[Key]) {
+    setTravelerQuickAddForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function openTravelerQuickAdd() {
+    const parsedName = parseTravelerName(travelerQuery);
+    setTravelerQuickAddForm({
+      firstName: parsedName.firstName,
+      lastName: parsedName.lastName,
+      phone: "",
+    });
+    setIsTravelerQuickAddOpen(true);
+  }
+
+  function closeTravelerQuickAdd() {
+    setIsTravelerQuickAddOpen(false);
+    setTravelerQuickAddForm({
+      firstName: "",
+      lastName: "",
+      phone: "",
+    });
+  }
+
+  function removeSelectedTraveler(key: string) {
+    const [entityType, entityId] = key.split(":");
+    if (!entityType || !entityId) {
+      return;
+    }
+
+    if (entityType === "PASSENGER") {
+      setSelectedPassengerIds((current) => current.filter((id) => id !== entityId));
+      return;
+    }
+
+    if (entityType === "USER" || entityType === "DRIVER") {
+      setSelectedTravelerRefs((current) => current.filter((item) => `${item.entityType}:${item.entityId}` !== key));
+    }
+  }
+
+  function handleTravelerSelect(option: SearchOption) {
+    const [entityType, entityId] = option.id.split(":");
+    if (!entityType || !entityId) {
+      return;
+    }
+
+    if (entityType === "PASSENGER") {
+      setSelectedPassengerIds((current) => (current.includes(entityId) ? current : [...current, entityId]));
+    } else if (entityType === "USER" || entityType === "DRIVER") {
+      setSelectedTravelerRefs((current) =>
+        current.some((item) => item.entityType === entityType && item.entityId === entityId)
+          ? current
+          : [...current, { entityType, entityId }],
+      );
+    }
+
+    closeTravelerQuickAdd();
+  }
+
+  async function createTravelerInline() {
+    if (!travelerQuickAddForm.firstName.trim() || !travelerQuickAddForm.lastName.trim() || !travelerQuickAddForm.phone.trim()) {
+      setMessage("Enter first name, last name, and phone to add a traveler.");
+      return;
+    }
+
+    const response = await fetch("/api/passengers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: travelerQuickAddForm.firstName.trim(),
+        lastName: travelerQuickAddForm.lastName.trim(),
+        legalName: null,
+        email: null,
+        phone: travelerQuickAddForm.phone.trim(),
+        passengerType: "HARIBHAKTO",
+        notes: null,
+      }),
+    });
+    const result = await response.json();
+
+    if (!response.ok) {
+      setMessage(result.error?.message ?? "Unable to add traveler.");
+      return;
+    }
+
+    setPassengerOptions((current) => [
+      ...current,
+      {
+        id: result.id,
+        label: buildFullName(result.firstName, result.lastName),
+        detail: result.phone ?? result.email ?? result.legalName ?? result.passengerType,
+      },
+    ]);
+    setSelectedPassengerIds((current) => (current.includes(result.id) ? current : [...current, result.id]));
+    setTravelerQuery("");
+    closeTravelerQuickAdd();
+    setMessage("Traveler added.");
   }
 
   async function createDriverInline() {
@@ -366,64 +500,92 @@ export function TripBuilder({
               <div className="stack">
                 <SearchCombobox
                   clearOnSelect
-                  label="Passenger name"
-                  onSelect={(option) => {
-                    setSelectedPassengerIds((current) => (current.includes(option.id) ? current : [...current, option.id]));
-                  }}
-                  onValueChange={setPassengerQuery}
-                  options={availablePassengerOptions}
-                  placeholder="Type a passenger name"
-                  value={passengerQuery}
-                />
-                <SearchCombobox
-                  clearOnSelect
-                  label="User or driver"
-                  onSelect={(option) => {
-                    const [entityType, entityId] = option.id.split(":");
-                    if (!entityType || !entityId || (entityType !== "USER" && entityType !== "DRIVER")) {
-                      return;
-                    }
-
-                    setSelectedTravelerRefs((current) =>
-                      current.some((item) => item.entityType === entityType && item.entityId === entityId)
-                        ? current
-                        : [...current, { entityType, entityId }],
-                    );
-                  }}
+                  emptyState={
+                    travelerQuery.trim() ? (
+                      <div className="stack stack--tight" style={{ gap: "0.5rem" }}>
+                        <span>No matches found.</span>
+                        <button
+                          className="button-secondary"
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => openTravelerQuickAdd()}
+                          style={{ justifySelf: "start" }}
+                        >
+                          Add traveler
+                        </button>
+                      </div>
+                    ) : undefined
+                  }
+                  label="Traveler name"
+                  onSelect={handleTravelerSelect}
                   onValueChange={setTravelerQuery}
                   options={availableTravelerOptions}
-                  placeholder="Type a user or driver"
+                  placeholder="Type a traveler name"
                   value={travelerQuery}
                 />
-                {selectedPassengers.length > 0 ? (
+                {isTravelerQuickAddOpen ? (
                   <div
                     style={{
                       display: "grid",
-                      gap: "0.6rem",
+                      gap: "0.75rem",
                       padding: "0.85rem 1rem",
                       border: "1px solid var(--line)",
                       borderRadius: "0.9rem",
                       background: "var(--bg-soft)",
                     }}
                   >
-                    <p className="eyebrow" style={{ margin: 0 }}>
-                      Selected passengers
-                    </p>
-                    <div className="chip-row">
-                      {selectedPassengers.map((passenger) => (
-                        <button
-                          key={passenger.id}
-                          className="chip"
-                          type="button"
-                          onClick={() => setSelectedPassengerIds((current) => current.filter((id) => id !== passenger.id))}
-                        >
-                          {passenger.label}
-                        </button>
-                      ))}
+                    <div className="row-card__title">
+                      <div>
+                        <p className="eyebrow" style={{ margin: 0 }}>
+                          Add traveler
+                        </p>
+                        <p className="notes" style={{ margin: "0.35rem 0 0 0" }}>
+                          Create a passenger and add them to this trip right away.
+                        </p>
+                      </div>
+                      <button className="button-secondary" type="button" onClick={() => closeTravelerQuickAdd()}>
+                        Cancel
+                      </button>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <label className="field">
+                        <span>First name</span>
+                        <input
+                          value={travelerQuickAddForm.firstName}
+                          onChange={(event) => updateTravelerQuickAddField("firstName", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Last name</span>
+                        <input
+                          value={travelerQuickAddForm.lastName}
+                          onChange={(event) => updateTravelerQuickAddField("lastName", event.target.value)}
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Phone</span>
+                        <input
+                          value={travelerQuickAddForm.phone}
+                          onChange={(event) => updateTravelerQuickAddField("phone", event.target.value)}
+                        />
+                      </label>
+                    </div>
+                    <div className="actions-row" style={{ marginTop: 0 }}>
+                      <button
+                        type="button"
+                        onClick={() => void createTravelerInline()}
+                        disabled={
+                          !travelerQuickAddForm.firstName.trim() ||
+                          !travelerQuickAddForm.lastName.trim() ||
+                          !travelerQuickAddForm.phone.trim()
+                        }
+                      >
+                        Add traveler
+                      </button>
                     </div>
                   </div>
                 ) : null}
-                {selectedExtraTravelers.length > 0 ? (
+                {selectedTravelers.length > 0 ? (
                   <div
                     style={{
                       display: "grid",
@@ -435,21 +597,17 @@ export function TripBuilder({
                     }}
                   >
                     <p className="eyebrow" style={{ margin: 0 }}>
-                      Selected linked travelers
+                      Selected travelers
                     </p>
                     <div className="chip-row">
-                      {selectedExtraTravelers.map((traveler) => (
+                      {selectedTravelers.map((traveler) => (
                         <button
                           key={traveler.key}
                           className="chip"
                           type="button"
-                          onClick={() =>
-                            setSelectedTravelerRefs((current) =>
-                              current.filter((item) => `${item.entityType}:${item.entityId}` !== traveler.key),
-                            )
-                          }
+                          onClick={() => removeSelectedTraveler(traveler.key)}
                         >
-                          {traveler.prefix}: {traveler.label}
+                          {traveler.label}
                         </button>
                       ))}
                     </div>

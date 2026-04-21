@@ -1,4 +1,4 @@
-import { listItineraries, listPassengerItineraries } from "@west-santo/data";
+import { listAirports, listItineraries, listPassengerItineraries, listPassengers } from "@west-santo/data";
 
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
@@ -25,15 +25,37 @@ function formatAirportSummary(airport: { code: string; name: string; city: strin
 export default async function OverviewPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ previewRole?: string }>;
+  searchParams?: Promise<{ previewRole?: string; passengerId?: string; airportId?: string }>;
 }) {
   const currentUser = await requireUser();
   const resolvedSearchParams = (await searchParams) ?? {};
+  const selectedPassengerId = resolvedSearchParams.passengerId ?? "";
+  const selectedAirportId = resolvedSearchParams.airportId ?? "";
   const effectiveRole =
     currentUser.role === "ADMIN" && ["ADMIN", "COORDINATOR", "PASSENGER"].includes(resolvedSearchParams.previewRole ?? "")
       ? (resolvedSearchParams.previewRole as "ADMIN" | "COORDINATOR" | "PASSENGER")
       : currentUser.role;
-  const itineraries = await (effectiveRole === "PASSENGER" ? listPassengerItineraries(currentUser.id) : listItineraries());
+  const [passengers, airports] = await Promise.all([listPassengers(), listAirports()]);
+  const coordinatorAirportIds =
+    effectiveRole === "COORDINATOR" ? currentUser.coordinatorAirports.map((assignment) => assignment.airportId) : [];
+  const scopedAirportIds =
+    selectedAirportId && coordinatorAirportIds.length > 0
+      ? coordinatorAirportIds.filter((airportId) => airportId === selectedAirportId)
+      : coordinatorAirportIds.length > 0
+        ? coordinatorAirportIds
+        : selectedAirportId
+          ? [selectedAirportId]
+          : undefined;
+  const itineraries = await (
+    effectiveRole === "PASSENGER"
+      ? listPassengerItineraries(currentUser.id, {
+          airportIds: selectedAirportId ? [selectedAirportId] : undefined,
+        })
+      : listItineraries({
+          airportIds: scopedAirportIds,
+          passengerId: selectedPassengerId || undefined,
+        })
+  );
 
   const upcomingTrips = itineraries
     .map((itinerary) => {
@@ -62,6 +84,44 @@ export default async function OverviewPage({
             : "Upcoming flights and trip readiness."
         }
       />
+
+      {effectiveRole !== "PASSENGER" ? (
+        <form className="compact-card" method="GET" style={{ marginBottom: "1rem", display: "grid", gap: "1rem" }}>
+          {resolvedSearchParams.previewRole ? <input name="previewRole" type="hidden" value={resolvedSearchParams.previewRole} /> : null}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="field">
+              <span>Passenger filter</span>
+              <select defaultValue={selectedPassengerId} name="passengerId">
+                <option value="">All passengers</option>
+                {passengers.map((passenger) => (
+                  <option key={passenger.id} value={passenger.id}>
+                    {passenger.firstName} {passenger.lastName}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Airport filter</span>
+              <select defaultValue={selectedAirportId} name="airportId">
+                <option value="">All airports</option>
+                {airports
+                  .filter((airport) => effectiveRole !== "COORDINATOR" || coordinatorAirportIds.includes(airport.id))
+                  .map((airport) => (
+                    <option key={airport.id} value={airport.id}>
+                      {airport.code} - {airport.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+            <button type="submit">Apply filters</button>
+            <a className="button-secondary" href={resolvedSearchParams.previewRole ? `/?previewRole=${resolvedSearchParams.previewRole}` : "/"}>
+              Clear
+            </a>
+          </div>
+        </form>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
         {upcomingTrips.map(({ itinerary, nextSegment }) => (

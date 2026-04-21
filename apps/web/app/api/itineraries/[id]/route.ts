@@ -1,9 +1,9 @@
-import { createApprovalRequest, getItineraryDetail, updateItinerary, updateTrip } from "@west-santo/data";
+import { createApprovalRequest, deleteItinerary, getItineraryDetail, updateItinerary, updateTrip } from "@west-santo/data";
 import { ItineraryStatus, TransportTaskType } from "@prisma/client";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
-import { requireApiRoles } from "@/lib/auth/guards";
+import { requireApiRole, requireApiRoles } from "@/lib/auth/guards";
 
 const travelerRefSchema = z.object({
   entityType: z.enum(["PASSENGER", "USER", "DRIVER"]),
@@ -13,6 +13,7 @@ const travelerRefSchema = z.object({
 const updateItinerarySchema = z.object({
   notes: z.string().nullable().optional(),
   status: z.nativeEnum(ItineraryStatus).optional(),
+  isArchived: z.boolean().optional(),
   passengerIds: z.array(z.string().uuid()).optional(),
   travelerRefs: z.array(travelerRefSchema).optional(),
   booking: z
@@ -94,6 +95,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       originalPayload: {
         notes: itinerary.notes,
         status: itinerary.status,
+        isArchived: itinerary.isArchived,
       },
       proposedPayload: parsed.data,
     });
@@ -122,5 +124,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     );
   }
 
-  return ok(await updateItinerary(id, parsed.data));
+  return ok(
+    await updateItinerary(id, {
+      ...parsed.data,
+      actorUserId: auth.id,
+    }),
+  );
+}
+
+export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRole("ADMIN");
+  if (auth instanceof Response) return auth;
+  const { id } = await context.params;
+  return ok(await deleteItinerary(id, auth.id));
 }

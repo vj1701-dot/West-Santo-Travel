@@ -16,7 +16,21 @@ type ReminderRuleRecord = {
   lastError: string | null;
 };
 
-export function ReminderRuleManager({ rules }: { rules: ReminderRuleRecord[] }) {
+type WorkflowRecord = {
+  id: string;
+  name: string;
+  audience: string;
+  channel: string;
+  schedule: string;
+};
+
+export function ReminderRuleManager({
+  rules,
+  workflows,
+}: {
+  rules: ReminderRuleRecord[];
+  workflows: readonly WorkflowRecord[];
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
@@ -44,10 +58,33 @@ export function ReminderRuleManager({ rules }: { rules: ReminderRuleRecord[] }) 
       <div className="panel-head">
         <div>
           <p className="eyebrow">Reminder Rules</p>
-          <h2>No-code reminder logic for Telegram and internal alerts</h2>
+          <h2>Built-in notification workflows plus advanced rules</h2>
         </div>
       </div>
       {message ? <div className="compact-card"><p>{message}</p></div> : null}
+      <div className="table-panel">
+        <h3 style={{ marginBottom: "1rem" }}>Built-in workflows</h3>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Workflow</th>
+              <th>Audience</th>
+              <th>Channel</th>
+              <th>Schedule</th>
+            </tr>
+          </thead>
+          <tbody>
+            {workflows.map((workflow) => (
+              <tr key={workflow.id}>
+                <td>{workflow.name}</td>
+                <td>{workflow.audience}</td>
+                <td>{workflow.channel}</td>
+                <td>{workflow.schedule}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       <div className="manager-layout">
         <div className="table-panel">
           <table className="data-table">
@@ -113,11 +150,12 @@ export function ReminderRuleManager({ rules }: { rules: ReminderRuleRecord[] }) 
             </label>
             <label className="field">
               <span>Channel</span>
-              <select defaultValue="TELEGRAM" name="channel">
-                <option value="TELEGRAM">Telegram</option>
-                <option value="INTERNAL">Internal</option>
-              </select>
-            </label>
+                  <select defaultValue="TELEGRAM" name="channel">
+                    <option value="TELEGRAM">Telegram</option>
+                    <option value="SMS">SMS</option>
+                    <option value="INTERNAL">Internal</option>
+                  </select>
+                </label>
             <label className="field"><span>Offset minutes</span><input defaultValue={-1440} name="offsetMinutes" type="number" /></label>
             <label className="field"><span>Template</span><textarea name="template" rows={5} placeholder="Hi {{passenger_name}}, your flight {{flight_number}} departs soon." /></label>
             <button disabled={isPending} type="submit">Create rule</button>

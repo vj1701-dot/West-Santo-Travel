@@ -31,7 +31,8 @@ services:
       MANDIR_IMPORT_ENABLED: ${MANDIR_IMPORT_ENABLED:-true}
       NEXT_TELEMETRY_DISABLED: "1"
     command: >
-      sh -c "npx prisma db push --schema prisma/schema.prisma &&
+      sh -c "(npx prisma migrate deploy --schema prisma/schema.prisma ||
+      npx prisma db push --accept-data-loss --schema prisma/schema.prisma) &&
       node --import tsx prisma/seed.mjs"
     restart: "no"
 
@@ -82,6 +83,9 @@ services:
     environment:
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
       SCHEDULER_TICK_MS: ${SCHEDULER_TICK_MS:-60000}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
 
 volumes:
   postgres_data:

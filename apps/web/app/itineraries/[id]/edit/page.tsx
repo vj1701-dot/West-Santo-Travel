@@ -2,6 +2,7 @@ import { getItineraryDetail, listAirports, listDrivers, listPassengers, listUser
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { ItineraryLifecycleActions } from "@/components/itinerary-lifecycle-actions";
 import { PageHeader } from "@/components/page-header";
 import { TripBuilder } from "@/components/trip-builder";
 import { requireUser } from "@/lib/auth/session";
@@ -38,7 +39,17 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
 
   return (
     <AppShell currentUser={currentUser}>
-      <PageHeader title="Edit Itinerary" tooltip="Update passengers, flights, transport, and notes for this trip" />
+      <PageHeader
+        title="Edit Itinerary"
+        tooltip="Update passengers, flights, transport, and notes for this trip"
+        actions={
+          <ItineraryLifecycleActions
+            itineraryId={itinerary.id}
+            isArchived={itinerary.isArchived}
+            role={currentUser.role as "ADMIN" | "COORDINATOR"}
+          />
+        }
+      />
       <TripBuilder
         drivers={drivers.map((driver) => ({
           id: driver.id,
