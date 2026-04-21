@@ -12,6 +12,5 @@ coverage
 .vscode/mcp.json
 skills
 .vscode
-.docker-compose.production.yml
-.docker-compose.yml
+
 
