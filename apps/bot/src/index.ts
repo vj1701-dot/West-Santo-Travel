@@ -3,6 +3,7 @@ import {
   dispatchQueuedNotifications,
   linkTelegramAccount,
   listDriverTransportTasksByChatId,
+  listUpcomingFlightsForUserChat,
   markNotificationFailed,
   markNotificationSent,
   prisma,
@@ -245,7 +246,7 @@ async function handleMessage(update: TelegramUpdate) {
   if (text === "/start") {
     await sendMessage(
       message.chat.id,
-      "Send your phone number or share your contact so I can match it with your passenger, driver, or user record.",
+      "Send your phone number in any format, including +1, spaces, or dashes, or share your contact so I can match it with your passenger, driver, or user record.",
       true,
     );
     return;
@@ -253,6 +254,42 @@ async function handleMessage(update: TelegramUpdate) {
 
   if (text === "/tasks" || text === "/assignments") {
     await sendDriverAssignments(message.chat.id);
+    return;
+  }
+
+  if (text === "/upcoming") {
+    const upcoming = await listUpcomingFlightsForUserChat(chatId);
+
+    if (!upcoming) {
+      await sendMessage(message.chat.id, "This command is available only for Telegram-linked admin or coordinator accounts.");
+      return;
+    }
+
+    if (upcoming.flights.length === 0) {
+      await sendMessage(message.chat.id, "No upcoming flights for your assigned airports.");
+      return;
+    }
+
+    const text = upcoming.flights.map((segment) => {
+      const departureTime = new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(segment.departureTimeLocal);
+
+      return [
+        `${segment.flightNumber} ${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`,
+        `Departure: ${departureTime}`,
+        `Passengers: ${formatPassengerNames(segment.itinerary.itineraryPassengers.map((item) => item.passenger)) || "None"}`,
+        `Transport: ${segment.itinerary.transportTasks
+          .filter((task) => task.flightSegmentId === segment.id)
+          .map((task) => `${task.taskType}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || "Unassigned"}`)
+          .join(" · ") || "None"}`,
+      ].join("\n");
+    }).join("\n\n");
+
+    await sendMessage(message.chat.id, text);
     return;
   }
 
@@ -265,9 +302,16 @@ async function handleMessage(update: TelegramUpdate) {
   const result = await linkTelegramAccount(chatId, rawInput, telegramUsername);
 
   if (result.linked) {
-    const displayName = "displayName" in result ? result.displayName : "your record";
-    await sendMessage(message.chat.id, `Linked to ${displayName}.`);
-    if (result.entityType === "DRIVER") {
+    const linkedSummary =
+      "linkedEntities" in result && Array.isArray(result.linkedEntities) && result.linkedEntities.length > 0
+        ? result.linkedEntities.map((item) => `${item.displayName} (${item.entityType.toLowerCase()})`).join(", ")
+        : ("displayName" in result ? result.displayName : "your record");
+    await sendMessage(message.chat.id, `Linked to ${linkedSummary}.`);
+    if (
+      "linkedEntities" in result &&
+      Array.isArray(result.linkedEntities) &&
+      result.linkedEntities.some((item) => item.entityType === "DRIVER")
+    ) {
       await sendDriverAssignments(message.chat.id);
     }
     return;

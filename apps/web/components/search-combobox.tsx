@@ -1,7 +1,7 @@
 "use client";
 
 import Fuse from "fuse.js";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 
 type SearchOption = {
   id: string;
@@ -18,6 +18,7 @@ type SearchComboboxProps = {
   placeholder?: string;
   disabled?: boolean;
   clearOnSelect?: boolean;
+  emptyState?: ReactNode;
 };
 
 const MAX_RESULTS = 8;
@@ -35,6 +36,7 @@ export function SearchCombobox({
   placeholder,
   disabled,
   clearOnSelect = false,
+  emptyState,
 }: SearchComboboxProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputId = useId();
@@ -164,7 +166,7 @@ export function SearchCombobox({
                 ))
               ) : (
                 <li className="airport-combobox__empty" role="status">
-                  No matches found.
+                  {emptyState ?? "No matches found."}
                 </li>
               )}
             </ul>

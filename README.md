@@ -57,6 +57,8 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 
 - Admins and coordinators must be able to create and fully edit itineraries with one or more flight segments.
 - A trip can include passengers, booking details, accommodation notes, trip notes, and transport tasks.
+- Itineraries remain passenger-based even when staff selects a user or driver as the traveler; the system resolves or auto-creates a persisted passenger record.
+- Cancelling an itinerary archives it instead of removing it, while admins still retain a separate hard-delete path for mistaken records.
 - Flight times are entered in airport-local time, stored with the airport timezone, and converted to UTC for scheduling logic.
 - Passenger records are separate from user records so guests and non-login travelers can still be tracked.
 
@@ -78,8 +80,9 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 ### 5. Notifications And Background Processing
 
 - Reminder rules must be configurable in the app and evaluated by a scheduler service.
-- Notifications are queued in the database and delivered by the bot worker.
-- The Telegram bot must support linking a chat to an existing record by phone number or shared contact.
+- Notifications are queued in the database and delivered by Telegram for admins/coordinators and Twilio SMS for passengers/drivers.
+- The Telegram bot must support linking a chat to an existing record by phone number or shared contact, accepting phone numbers in any common format.
+- Admins keep full web visibility, but Telegram notifications and `/upcoming` stay scoped to their assigned airports.
 - The bot must tolerate scaffold mode when `TELEGRAM_BOT_TOKEN` is not configured.
 
 ### 6. Auditability
@@ -101,10 +104,13 @@ Implemented now:
 - Docker Compose stack for web, bot, scheduler, and database
 - Add Flight trip editor with passenger autocomplete, airline autocomplete, per-segment pickup/dropoff entries, inline driver creation, and accommodation notes
 - Itinerary list redesign with edit flow at `/itineraries/[id]/edit`
+- Archive-on-cancel itinerary lifecycle with admin-only hard delete
+- Overview filters on `/` for passenger and airport, with role-aware scoping
 - Public submission intake endpoint and page at `/submission`
 - CSV exports for trips, passengers, drivers, and users
-- Reminder rule CRUD and scheduler evaluation loop
-- Telegram phone/contact linking and queued notification dispatch
+- Built-in notification workflows plus configurable reminder rule CRUD
+- Telegram phone/contact linking, `/upcoming`, and queued notification dispatch
+- Twilio SMS dispatch for passenger and driver notifications
 
 Partially implemented or intentionally deferred:
 
@@ -137,11 +143,11 @@ Partially implemented or intentionally deferred:
 - `bootstrap`: one-shot Prisma schema push and seed step
 - `web`: Next.js app on `http://localhost:3000`
 - `bot`: Telegram worker that links accounts and sends queued notifications
-- `scheduler`: periodic reminder-rule scanner and queue producer
+- `scheduler`: periodic reminder-rule scanner, built-in workflow scheduler, and Twilio SMS dispatcher
 
 ### Web App Surface
 
-- `/`: dashboard and upcoming trip overview
+- `/`: compact upcoming trip overview with passenger and airport filters
 - `/sign-in`: standalone authentication page for existing users
 - `/sign-up`: standalone authentication page for new users
 - `/add-flight`: trip builder for admins and coordinators
@@ -150,7 +156,7 @@ Partially implemented or intentionally deferred:
 - `/passengers`: passenger directory and edit flow
 - `/drivers`: driver directory and airport assignment flow
 - `/users`: access provisioning and identity status
-- `/reminders`: reminder rule management
+- `/reminders`: built-in workflow reference plus advanced reminder rule management
 - `/submission`: public guest submission form
 - `/submissions`: admin/coordinator submission review queue
 - `/submissions/[id]/edit`: complete a public submission and convert it into an itinerary
@@ -202,8 +208,8 @@ The web app exposes route handlers under `apps/web/app/api` for:
 - `TransportTask` and `TransportTaskDriver`: pickup/drop-off work assignments, including multiple tasks per segment and multiple drivers per task
 - `ApprovalRequest`: pending and reviewed change requests
 - `PublicSubmission`: external intake record before admin review
-- `ReminderRule` and `ReminderRun`: no-code reminder configuration and execution history
-- `NotificationLog`: queued, sent, or failed notifications
+- `ReminderRule` and `ReminderRun`: advanced reminder configuration and execution history
+- `NotificationLog`: queued, sent, or failed Telegram and SMS notifications
 - `AuditLog`: change trail
 
 ### Important Enums
@@ -215,7 +221,7 @@ The web app exposes route handlers under `apps/web/app/api` for:
 - `TransportTaskStatus`: `UNASSIGNED`, `ASSIGNED`, `EN_ROUTE`, `PICKED_UP`, `DROPPED_OFF`, `COMPLETED`, `CANCELLED`
 - `ApprovalStatus`: `PENDING`, `APPROVED`, `REJECTED`
 - `SubmissionStatus`: `PENDING`, `APPROVED`, `REJECTED`, `DUPLICATE_FLAGGED`
-- Reminder-related enums for trigger, audience, channel, and run status
+- Reminder-related enums for trigger, audience, channel, notification channel, and run status
 
 ### Timezone Handling
 
@@ -275,6 +281,7 @@ Minimum values to review in `.env`:
 - `GOOGLE_CLIENT_SECRET`
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` for seeded admin credentials
 - `TELEGRAM_BOT_TOKEN` if you want a live bot
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` if you want live SMS delivery
 - `AIRPORT_IMPORT_URL` if you want to override the default OurAirports feed during seed/bootstrap
 - `MANDIR_IMPORT_ENABLED` if you want to skip the BAPS mandir import during seed/bootstrap
 
@@ -285,6 +292,7 @@ Recommended local values:
 - `APP_BASE_URL=http://localhost:3000`
 - `BETTER_AUTH_URL=http://localhost:3000`
 - `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000`
+- `TWILIO_FROM_NUMBER=+15551234567`
 - `AIRPORT_IMPORT_ENABLED=true`
 - `MANDIR_IMPORT_ENABLED=true`
 
@@ -383,8 +391,10 @@ Airport import notes:
 The current bot implementation supports:
 
 - `/start`
+- `/upcoming` for Telegram-linked admins and coordinators, scoped to their assigned airports
 - phone-number or contact-share based record matching
-- linking to a passenger, user, or driver record through the repository layer
+- linking the same chat to matching passenger, user, and driver records when one person holds multiple roles
+- accepting phone input with `+1`, spaces, or dashes
 - dispatching queued notifications to Telegram chats
 
 If `TELEGRAM_BOT_TOKEN` is missing, the bot does not poll Telegram and logs that it is running in scaffold mode.
@@ -394,8 +404,41 @@ If `TELEGRAM_BOT_TOKEN` is missing, the bot does not poll Telegram and logs that
 The scheduler runs every `SCHEDULER_TICK_MS` milliseconds and:
 
 - scans upcoming transport tasks
-- evaluates reminder rules
-- queues notifications for delivery
+- evaluates advanced reminder rules
+- queues built-in flight and transport notification workflows
+- dispatches SMS through Twilio when configured
+
+## Lifecycle, Filters, And Notifications
+
+### Itinerary Lifecycle
+
+- Active itineraries remain visible in normal operations views.
+- Cancelling an itinerary sets `status = CANCELLED` and archives it.
+- Archived itineraries stay in the database but are hidden from the default overview, reminder scheduling, and `/upcoming`.
+- Admins can hard delete an itinerary only when it was created incorrectly and should be removed permanently.
+
+### Traveler And Driver Persistence
+
+- Every itinerary traveler must resolve to a persisted `Passenger` row.
+- Selecting a `User` or `Driver` as a traveler auto-resolves to an existing passenger when possible and auto-creates one when needed.
+- Every assigned itinerary driver must be a persisted `Driver` row; inline driver creation in the trip builder is the intended path when a driver does not exist yet.
+
+### Overview And Role Scoping
+
+- `/` is the compact operations overview for upcoming itineraries.
+- Admins can see all active itineraries in the web UI.
+- Coordinators see only itineraries touching their assigned airports.
+- Passengers see only their own itineraries.
+- Admin and coordinator overview filters support `passenger` and `airport`.
+
+### Built-In Notification Workflows
+
+- Flight added, changed, cancelled, or deleted: Telegram to admins and coordinators assigned to affected airports.
+- Pickup or dropoff assigned, changed, or cancelled: Telegram to assigned-airport admins and coordinators, SMS to itinerary passengers, and SMS to the assigned drivers for that task type.
+- 48 hours before departure: Telegram to departure-airport admins and coordinators, SMS to itinerary passengers, and SMS to relevant drivers.
+- 6 hours before departure: SMS to dropoff drivers only.
+- 6 hours before arrival: SMS to pickup drivers only.
+- Passenger/admin 48-hour reminders include accommodation details when present.
 
 ### Exports
 

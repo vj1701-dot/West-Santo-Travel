@@ -1,6 +1,7 @@
 import {
   ApprovalStatus,
   AuditSource,
+  NotificationChannel,
   NotificationStatus,
   NotificationType,
   PassengerType,
@@ -391,9 +392,17 @@ async function createItineraryFromSubmission(
   return itinerary;
 }
 
-export async function getDashboardSnapshot(role?: string | null) {
+export async function getDashboardSnapshot(input?: {
+  role?: string | null;
+  airportIds?: string[] | null;
+  passengerId?: string | null;
+}) {
   const today = new Date().toISOString().slice(0, 10);
-  const safeRole = toSummaryRole(role);
+  const safeRole = toSummaryRole(input?.role);
+  const where = buildItineraryWhere({
+    airportIds: input?.airportIds ?? undefined,
+    passengerId: input?.passengerId ?? undefined,
+  });
 
   const [todayArrivals, pendingApprovals, unassignedTasks, activeDrivers, itineraries, approvals, transportTasks] =
     await Promise.all([
@@ -409,6 +418,7 @@ export async function getDashboardSnapshot(role?: string | null) {
       prisma.transportTask.count({ where: { status: "UNASSIGNED" } }),
       prisma.driver.count({ where: { transportTaskDrivers: { some: {} } } }),
       prisma.itinerary.findMany({
+        where,
         take: 5,
         orderBy: { createdAt: "desc" },
         include: {
@@ -422,6 +432,16 @@ export async function getDashboardSnapshot(role?: string | null) {
         include: { requestedByUser: true, itinerary: true },
       }),
       prisma.transportTask.findMany({
+        where: input?.airportIds?.length
+          ? {
+              airportId: {
+                in: input.airportIds,
+              },
+              itinerary: { isArchived: false },
+            }
+          : {
+              itinerary: { isArchived: false },
+            },
         take: 5,
         orderBy: { scheduledTimeLocal: "asc" },
         include: {
@@ -666,6 +686,8 @@ export async function findAuthorizedUserByEmail(email: string) {
   return prisma.user.findUnique({
     where: { email: email.toLowerCase() },
     include: {
+      adminAirports: { include: { airport: true } },
+      coordinatorAirports: { include: { airport: true } },
       passengerUserLinks: { include: { passenger: true } },
     },
   });
@@ -675,6 +697,8 @@ export async function findAuthorizedUserById(id: string) {
   return prisma.user.findUnique({
     where: { id },
     include: {
+      adminAirports: { include: { airport: true } },
+      coordinatorAirports: { include: { airport: true } },
       passengerUserLinks: { include: { passenger: true } },
     },
   });
@@ -710,6 +734,8 @@ export async function syncUserIdentityOnLogin(input: {
         identityLinkedAt: user.identityLinkedAt ?? new Date(),
       },
       include: {
+        adminAirports: { include: { airport: true } },
+        coordinatorAirports: { include: { airport: true } },
         passengerUserLinks: { include: { passenger: true } },
       },
     });
@@ -797,8 +823,72 @@ export async function createApprovalRequest(input: {
   });
 }
 
-export async function listItineraries() {
+type ItineraryQueryOptions = {
+  includeArchived?: boolean;
+  passengerId?: string | null;
+  airportIds?: string[] | null;
+  limit?: number;
+};
+
+function buildItineraryWhere(options?: ItineraryQueryOptions): Prisma.ItineraryWhereInput {
+  const where: Prisma.ItineraryWhereInput = {};
+
+  if (!options?.includeArchived) {
+    where.isArchived = false;
+  }
+
+  if (options?.passengerId) {
+    where.itineraryPassengers = {
+      some: {
+        passengerId: options.passengerId,
+      },
+    };
+  }
+
+  if (options?.airportIds && options.airportIds.length > 0) {
+    where.AND = [
+      ...(Array.isArray(where.AND) ? where.AND : []),
+      {
+        OR: [
+          {
+            flightSegments: {
+              some: {
+                departureAirportId: {
+                  in: options.airportIds,
+                },
+              },
+            },
+          },
+          {
+            flightSegments: {
+              some: {
+                arrivalAirportId: {
+                  in: options.airportIds,
+                },
+              },
+            },
+          },
+          {
+            transportTasks: {
+              some: {
+                airportId: {
+                  in: options.airportIds,
+                },
+              },
+            },
+          },
+        ],
+      },
+    ];
+  }
+
+  return where;
+}
+
+export async function listItineraries(options?: ItineraryQueryOptions) {
   return prisma.itinerary.findMany({
+    where: buildItineraryWhere(options),
+    take: options?.limit,
     orderBy: { updatedAt: "desc" },
     include: {
       itineraryPassengers: { include: { passenger: true } },
@@ -811,7 +901,10 @@ export async function listItineraries() {
   });
 }
 
-export async function listPassengerItineraries(userId: string) {
+export async function listPassengerItineraries(
+  userId: string,
+  options?: Omit<ItineraryQueryOptions, "passengerId">,
+) {
   const link = await prisma.passengerUserLink.findFirst({
     where: { userId },
     select: { passengerId: true },
@@ -821,23 +914,9 @@ export async function listPassengerItineraries(userId: string) {
     return [];
   }
 
-  return prisma.itinerary.findMany({
-    where: {
-      itineraryPassengers: {
-        some: {
-          passengerId: link.passengerId,
-        },
-      },
-    },
-    orderBy: { updatedAt: "desc" },
-    include: {
-      itineraryPassengers: { include: { passenger: true } },
-      flightSegments: { orderBy: { segmentOrder: "asc" }, include: { departureAirport: true, arrivalAirport: true } },
-      transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
-      booking: true,
-      accommodations: { include: { mandir: true } },
-      approvalRequests: { orderBy: { requestedAt: "desc" } },
-    },
+  return listItineraries({
+    ...options,
+    passengerId: link.passengerId,
   });
 }
 
@@ -1130,34 +1209,114 @@ export async function createTrip(input: TripInput) {
       },
     });
 
-    return findTripDetailOrThrow(tx, itinerary.id);
+    const created = await findTripDetailOrThrow(tx, itinerary.id);
+    await queueFlightChangeNotifications(tx, {
+      itinerary: created,
+      changeLabel: "Flight added",
+    });
+
+    return created;
   });
 }
 
-export async function updateItinerary(id: string, input: { notes?: string | null; status?: Prisma.ItineraryUpdateInput["status"] }) {
+export async function updateItinerary(
+  id: string,
+  input: {
+    notes?: string | null;
+    status?: Prisma.ItineraryUpdateInput["status"];
+    isArchived?: boolean;
+    actorUserId?: string | null;
+  },
+) {
   return prisma.$transaction(async (tx) => {
     const current = await tx.itinerary.findUnique({
       where: { id },
-      select: { notes: true, status: true },
+      select: { notes: true, status: true, isArchived: true },
     });
 
     const updated = await tx.itinerary.update({
       where: { id },
-      data: input,
+      data: {
+        notes: input.notes,
+        status: input.status,
+        isArchived: input.isArchived,
+      },
     });
 
     await createAuditLog(tx, {
       action: "ITINERARY_UPDATED",
       entityType: "Itinerary",
       entityId: id,
+      actorUserId: input.actorUserId ?? null,
       oldValues: current ?? undefined,
       newValues: {
         notes: updated.notes,
         status: updated.status,
+        isArchived: updated.isArchived,
       },
     });
 
+    if (!current?.isArchived && updated.isArchived) {
+      await createAuditLog(tx, {
+        action: updated.status === "CANCELLED" ? "ITINERARY_CANCELLED_AND_ARCHIVED" : "ITINERARY_ARCHIVED",
+        entityType: "Itinerary",
+        entityId: id,
+        actorUserId: input.actorUserId ?? null,
+        oldValues: { isArchived: current?.isArchived ?? false, status: current?.status ?? null },
+        newValues: { isArchived: true, status: updated.status },
+      });
+    }
+
+    if (current?.isArchived && !updated.isArchived) {
+      await createAuditLog(tx, {
+        action: "ITINERARY_UNARCHIVED",
+        entityType: "Itinerary",
+        entityId: id,
+        actorUserId: input.actorUserId ?? null,
+        oldValues: { isArchived: true, status: current.status },
+        newValues: { isArchived: false, status: updated.status },
+      });
+    }
+
+    if (updated.status === "CANCELLED" && updated.isArchived) {
+      const detail = await findTripDetailOrThrow(tx, id);
+      await queueFlightChangeNotifications(tx, {
+        itinerary: detail,
+        changeLabel: "Flight cancelled and archived",
+      });
+    }
+
     return updated;
+  });
+}
+
+export async function deleteItinerary(id: string, actorUserId?: string | null) {
+  return prisma.$transaction(async (tx) => {
+    const current = await findTripDetailOrThrow(tx, id);
+
+    await queueFlightChangeNotifications(tx, {
+      itinerary: current,
+      changeLabel: "Flight deleted",
+    });
+
+    await createAuditLog(tx, {
+      action: "ITINERARY_HARD_DELETED",
+      entityType: "Itinerary",
+      entityId: id,
+      actorUserId: actorUserId ?? null,
+      oldValues: {
+        status: current.status,
+        isArchived: current.isArchived,
+        passengerIds: current.itineraryPassengers.map((item) => item.passenger.id),
+        segmentCount: current.flightSegments.length,
+      },
+    });
+
+    await tx.itinerary.delete({
+      where: { id },
+    });
+
+    return { deleted: true, id };
   });
 }
 
@@ -1201,6 +1360,11 @@ export async function updateTrip(id: string, input: TripInput & { status?: Prism
         travelerRefsResolved: resolvedTravelers.resolutionSummary,
         segmentCount: updated.flightSegments.length,
       },
+    });
+
+    await queueFlightChangeNotifications(tx, {
+      itinerary: updated,
+      changeLabel: "Flight changed",
     });
 
     return updated;
@@ -1412,6 +1576,41 @@ export async function assignDriversToTransportTask(input: {
   assignedByUserId?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
+    const currentTask = await tx.transportTask.findUnique({
+      where: { id: input.taskId },
+      include: {
+        airport: true,
+        mandir: true,
+        itinerary: {
+          include: {
+            itineraryPassengers: {
+              include: {
+                passenger: {
+                  include: {
+                    userLinks: {
+                      include: {
+                        user: {
+                          select: {
+                            phone: true,
+                          },
+                        },
+                      },
+                      take: 1,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        drivers: { include: { driver: true } },
+      },
+    });
+
+    if (!currentTask) {
+      throw new Error("Transport task not found.");
+    }
+
     const existingAssignments = await tx.transportTaskDriver.findMany({
       where: { transportTaskId: input.taskId },
       select: { driverId: true },
@@ -1445,7 +1644,7 @@ export async function assignDriversToTransportTask(input: {
       newValues: { driverIds: input.driverIds },
     });
 
-    return tx.transportTask.findUnique({
+    const updatedTask = await tx.transportTask.findUnique({
       where: { id: input.taskId },
       include: {
         airport: true,
@@ -1453,6 +1652,30 @@ export async function assignDriversToTransportTask(input: {
         drivers: { include: { driver: true } },
       },
     });
+
+    if (!updatedTask) {
+      throw new Error("Transport task not found after assignment update.");
+    }
+
+    const changeLabel =
+      existingAssignments.length === 0 && input.driverIds.length > 0
+        ? `${updatedTask.taskType} assignment created`
+        : existingAssignments.length > 0 && input.driverIds.length === 0
+          ? `${updatedTask.taskType} assignment cancelled`
+          : `${updatedTask.taskType} assignment changed`;
+
+    await queueTransportChangeNotifications(tx, {
+      task: updatedTask,
+      passengers: currentTask.itinerary.itineraryPassengers.map((item) => ({
+        id: item.passenger.id,
+        firstName: item.passenger.firstName,
+        lastName: item.passenger.lastName,
+        phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
+      })),
+      changeLabel,
+    });
+
+    return updatedTask;
   });
 }
 
@@ -1747,6 +1970,7 @@ export async function reviewApprovalRequest(input: {
       } else if (approval.entityType === "ITINERARY_UPDATE") {
         const tripPayload = proposedPayload as unknown as TripInput & {
           status?: Prisma.ItineraryUpdateInput["status"];
+          isArchived?: boolean;
         };
         if (Array.isArray(tripPayload.passengerIds) && Array.isArray(tripPayload.segments)) {
           await tx.itinerary.update({
@@ -1754,6 +1978,7 @@ export async function reviewApprovalRequest(input: {
             data: {
               notes: tripPayload.notes ?? null,
               status: tripPayload.status,
+              isArchived: typeof tripPayload.isArchived === "boolean" ? tripPayload.isArchived : undefined,
             },
           });
           await syncTripRelations(tx, approval.itineraryId, {
@@ -1766,6 +1991,7 @@ export async function reviewApprovalRequest(input: {
             data: {
               notes: typeof tripPayload.notes === "string" || tripPayload.notes === null ? tripPayload.notes : undefined,
               status: tripPayload.status,
+              isArchived: typeof tripPayload.isArchived === "boolean" ? tripPayload.isArchived : undefined,
             },
           });
         }
@@ -1795,11 +2021,44 @@ export async function reviewApprovalRequest(input: {
     });
 
     if (pendingCount === 0) {
+      const latestItinerary = await tx.itinerary.findUnique({
+        where: { id: approval.itineraryId },
+        select: { status: true },
+      });
+      const nextStatus =
+        input.status === ApprovalStatus.APPROVED
+          ? latestItinerary?.status === "CANCELLED"
+            ? "CANCELLED"
+            : latestItinerary?.status === "PENDING_APPROVAL" || !latestItinerary?.status
+              ? "CONFIRMED"
+              : latestItinerary.status
+          : approval.itinerary.status === "CANCELLED"
+            ? "CANCELLED"
+            : "CONFIRMED";
+
       await tx.itinerary.update({
         where: { id: approval.itineraryId },
         data: {
-          status: input.status === ApprovalStatus.APPROVED ? "CONFIRMED" : approval.itinerary.status === "CANCELLED" ? "CANCELLED" : "CONFIRMED",
+          status: nextStatus,
         },
+      });
+    }
+
+    if (
+      input.status === ApprovalStatus.APPROVED &&
+      ["FLIGHT_SEGMENT", "FLIGHT_SEGMENT_UPDATE", "FLIGHT_SEGMENT_CREATE", "ITINERARY_UPDATE"].includes(approval.entityType)
+    ) {
+      const detail = await findTripDetailOrThrow(tx, approval.itineraryId);
+      const changeLabel =
+        approval.entityType === "FLIGHT_SEGMENT_CREATE"
+          ? "Flight added"
+          : detail.status === "CANCELLED" && detail.isArchived
+            ? "Flight cancelled and archived"
+            : "Flight changed";
+
+      await queueFlightChangeNotifications(tx, {
+        itinerary: detail,
+        changeLabel,
       });
     }
 
@@ -2286,27 +2545,28 @@ export async function linkTelegramAccount(chatId: string, rawInput: string, tele
       : Promise.resolve([]),
   ]);
 
-  const matches = [
-    ...users.map((user) => ({ entityType: "User" as const, entityId: user.id })),
-    ...passengers.map((passenger) => ({ entityType: "Passenger" as const, entityId: passenger.id })),
-    ...drivers.map((driver) => ({ entityType: "Driver" as const, entityId: driver.id })),
-  ];
+  const totalMatches = users.length + passengers.length + drivers.length;
+  const canLinkAllMatches =
+    totalMatches > 0 &&
+    users.length <= 1 &&
+    passengers.length <= 1 &&
+    drivers.length <= 1;
 
-  if (matches.length !== 1) {
+  if (!canLinkAllMatches) {
     return {
       linked: false,
-      ambiguous: matches.length > 1,
-      matchCount: matches.length,
+      ambiguous: totalMatches > 1,
+      matchCount: totalMatches,
     };
   }
 
-  const match = matches[0];
+  const linkedRecords = await prisma.$transaction(async (tx) => {
+    const linked: Array<{ entityType: "USER" | "PASSENGER" | "DRIVER"; displayName: string; role: UserRole | null }> = [];
 
-  const linkedRecord = await prisma.$transaction(async (tx) => {
-    if (match.entityType === "User") {
-      const current = await tx.user.findUniqueOrThrow({ where: { id: match.entityId } });
+    if (users[0]) {
+      const current = await tx.user.findUniqueOrThrow({ where: { id: users[0].id } });
       const updatedUser = await tx.user.update({
-        where: { id: match.entityId },
+        where: { id: users[0].id },
         data: {
           telegramChatId: chatId,
           telegramUsername: telegramUsername ?? null,
@@ -2316,24 +2576,24 @@ export async function linkTelegramAccount(chatId: string, rawInput: string, tele
       await createAuditLog(tx, {
         action: "TELEGRAM_ACCOUNT_LINKED",
         entityType: "User",
-        entityId: match.entityId,
-        actorUserId: match.entityId,
+        entityId: users[0].id,
+        actorUserId: users[0].id,
         source: AuditSource.BOT,
         oldValues: { telegramChatId: current.telegramChatId ?? null },
         newValues: { telegramChatId: chatId, telegramUsername: telegramUsername ?? null },
       });
 
-      return {
+      linked.push({
         entityType: "USER",
-        displayName: `${updatedUser.firstName} ${updatedUser.lastName}`,
+        displayName: `${updatedUser.firstName} ${updatedUser.lastName}`.trim(),
         role: updatedUser.role,
-      };
+      });
     }
 
-    if (match.entityType === "Passenger") {
-      const current = await tx.passenger.findUniqueOrThrow({ where: { id: match.entityId } });
+    if (passengers[0]) {
+      const current = await tx.passenger.findUniqueOrThrow({ where: { id: passengers[0].id } });
       const updatedPassenger = await tx.passenger.update({
-        where: { id: match.entityId },
+        where: { id: passengers[0].id },
         data: {
           telegramChatId: chatId,
           telegramUsername: telegramUsername ?? null,
@@ -2343,49 +2603,56 @@ export async function linkTelegramAccount(chatId: string, rawInput: string, tele
       await createAuditLog(tx, {
         action: "TELEGRAM_ACCOUNT_LINKED",
         entityType: "Passenger",
-        entityId: match.entityId,
+        entityId: passengers[0].id,
         source: AuditSource.BOT,
         oldValues: { telegramChatId: current.telegramChatId ?? null },
         newValues: { telegramChatId: chatId, telegramUsername: telegramUsername ?? null },
       });
 
-      return {
+      linked.push({
         entityType: "PASSENGER",
-        displayName: `${updatedPassenger.firstName} ${updatedPassenger.lastName}`,
+        displayName: `${updatedPassenger.firstName} ${updatedPassenger.lastName}`.trim(),
         role: null,
-      };
+      });
     }
 
-    const current = await tx.driver.findUniqueOrThrow({ where: { id: match.entityId } });
-    const updatedDriver = await tx.driver.update({
-      where: { id: match.entityId },
-      data: {
-        telegramChatId: chatId,
-        telegramUsername: telegramUsername ?? null,
-      },
-    });
+    if (drivers[0]) {
+      const current = await tx.driver.findUniqueOrThrow({ where: { id: drivers[0].id } });
+      const updatedDriver = await tx.driver.update({
+        where: { id: drivers[0].id },
+        data: {
+          telegramChatId: chatId,
+          telegramUsername: telegramUsername ?? null,
+        },
+      });
 
-    await createAuditLog(tx, {
-      action: "TELEGRAM_ACCOUNT_LINKED",
-      entityType: "Driver",
-      entityId: match.entityId,
-      source: AuditSource.BOT,
-      oldValues: { telegramChatId: current.telegramChatId ?? null },
-      newValues: { telegramChatId: chatId, telegramUsername: telegramUsername ?? null },
-    });
+      await createAuditLog(tx, {
+        action: "TELEGRAM_ACCOUNT_LINKED",
+        entityType: "Driver",
+        entityId: drivers[0].id,
+        source: AuditSource.BOT,
+        oldValues: { telegramChatId: current.telegramChatId ?? null },
+        newValues: { telegramChatId: chatId, telegramUsername: telegramUsername ?? null },
+      });
 
-    return {
-      entityType: "DRIVER",
-      displayName: updatedDriver.name,
-      role: null,
-    };
+      linked.push({
+        entityType: "DRIVER",
+        displayName: updatedDriver.name,
+        role: null,
+      });
+    }
+
+    return linked;
   });
 
   return {
     linked: true,
     ambiguous: false,
-    matchCount: 1,
-    ...linkedRecord,
+    matchCount: linkedRecords.length,
+    linkedEntities: linkedRecords,
+    entityType: linkedRecords[0]?.entityType ?? "USER",
+    displayName: linkedRecords[0]?.displayName ?? "your record",
+    role: linkedRecords[0]?.role ?? null,
   };
 }
 
@@ -2508,6 +2775,386 @@ export async function exportUsers() {
   });
 }
 
+const SYSTEM_REMINDER_WORKFLOWS = [
+  {
+    id: "flight-change",
+    name: "Flight added / changed / cancelled",
+    audience: "Scoped admins and coordinators",
+    channel: "Telegram",
+    schedule: "Immediate event notification",
+  },
+  {
+    id: "transport-change",
+    name: "Pickup / dropoff assigned / changed / cancelled",
+    audience: "Scoped staff, passengers, and assigned drivers",
+    channel: "Telegram + SMS",
+    schedule: "Immediate event notification",
+  },
+  {
+    id: "flight-48h",
+    name: "48 hours before departure",
+    audience: "Scoped staff, passengers, and relevant drivers",
+    channel: "Telegram + SMS",
+    schedule: "Scheduled",
+  },
+  {
+    id: "dropoff-6h",
+    name: "6 hours before departure",
+    audience: "Dropoff drivers",
+    channel: "SMS",
+    schedule: "Scheduled",
+  },
+  {
+    id: "pickup-6h",
+    name: "6 hours before arrival",
+    audience: "Pickup drivers",
+    channel: "SMS",
+    schedule: "Scheduled",
+  },
+] as const;
+
+export function listSystemReminderWorkflows() {
+  return SYSTEM_REMINDER_WORKFLOWS;
+}
+
+async function createQueuedNotification(
+  tx: Prisma.TransactionClient,
+  input: {
+    notificationType: NotificationType;
+    deliveryChannel: NotificationChannel;
+    recipientUserId?: string | null;
+    recipientPassengerId?: string | null;
+    recipientDriverId?: string | null;
+    recipientChatId?: string | null;
+    recipientPhone?: string | null;
+    payload: Prisma.InputJsonValue;
+    dedupeKey?: string | null;
+    providerName?: string | null;
+  },
+) {
+  if (input.deliveryChannel === NotificationChannel.TELEGRAM && !input.recipientChatId) {
+    return null;
+  }
+
+  const normalizedPhone = normalizeOptionalPhone(input.recipientPhone);
+  if (input.deliveryChannel === NotificationChannel.SMS && !normalizedPhone) {
+    return null;
+  }
+
+  if (input.dedupeKey) {
+    const existing = await tx.notificationLog.findUnique({
+      where: { dedupeKey: input.dedupeKey },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return null;
+    }
+  }
+
+  return tx.notificationLog.create({
+    data: {
+      notificationType: input.notificationType,
+      deliveryChannel: input.deliveryChannel,
+      recipientUserId: input.recipientUserId ?? null,
+      recipientPassengerId: input.recipientPassengerId ?? null,
+      recipientDriverId: input.recipientDriverId ?? null,
+      recipientChatId: input.recipientChatId ?? null,
+      recipientPhone: normalizedPhone,
+      providerName: input.providerName ?? (input.deliveryChannel === NotificationChannel.SMS ? "twilio" : "telegram"),
+      dedupeKey: input.dedupeKey ?? null,
+      payload: input.payload,
+      status: NotificationStatus.QUEUED,
+    },
+  });
+}
+
+async function listScopedUsersForAirports(
+  tx: Prisma.TransactionClient,
+  role: "ADMIN" | "COORDINATOR",
+  airportIds: string[],
+) {
+  if (airportIds.length === 0) {
+    return [];
+  }
+
+  return tx.user.findMany({
+    where: role === UserRole.ADMIN
+      ? {
+          role: UserRole.ADMIN,
+          isActive: true,
+          telegramChatId: { not: null },
+          adminAirports: {
+            some: {
+              airportId: {
+                in: airportIds,
+              },
+            },
+          },
+        }
+      : {
+          role: UserRole.COORDINATOR,
+          isActive: true,
+          telegramChatId: { not: null },
+          coordinatorAirports: {
+            some: {
+              airportId: {
+                in: airportIds,
+              },
+            },
+          },
+        },
+    include: {
+      adminAirports: { include: { airport: true } },
+      coordinatorAirports: { include: { airport: true } },
+    },
+  });
+}
+
+function buildFlightSummaryText(input: {
+  changeLabel: string;
+  route: string;
+  flightNumbers: string[];
+  passengers: Array<{ name: string; phone?: string | null }>;
+  drivers: Array<{ name: string; taskType?: string | null }>;
+  accommodation?: string | null;
+}) {
+  const passengerDetails = input.passengers
+    .map((passenger) => `${passenger.name}${passenger.phone ? ` (${passenger.phone})` : ""}`)
+    .join(", ");
+  const driverDetails = input.drivers.map((driver) => driver.taskType ? `${driver.name} (${driver.taskType})` : driver.name).join(", ");
+
+  return [
+    `${input.changeLabel}`,
+    `Route: ${input.route}`,
+    `Flights: ${input.flightNumbers.join(", ") || "Not set"}`,
+    passengerDetails ? `Passengers: ${passengerDetails}` : null,
+    driverDetails ? `Drivers: ${driverDetails}` : null,
+    input.accommodation ? `Accommodation: ${input.accommodation}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+function buildTransportSummaryText(input: {
+  changeLabel: string;
+  taskType: string;
+  airportCode: string;
+  scheduledTime?: Date | null;
+  passengers: Array<{ name: string; phone?: string | null }>;
+  drivers: Array<{ name: string; phone?: string | null }>;
+}) {
+  const scheduled =
+    input.scheduledTime
+      ? new Intl.DateTimeFormat("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }).format(input.scheduledTime)
+      : "Not scheduled";
+
+  return [
+    `${input.changeLabel}`,
+    `${input.taskType} at ${input.airportCode}`,
+    `Scheduled: ${scheduled}`,
+    `Passengers: ${input.passengers.map((passenger) => `${passenger.name}${passenger.phone ? ` (${passenger.phone})` : ""}`).join(", ") || "None"}`,
+    `Drivers: ${input.drivers.map((driver) => `${driver.name}${driver.phone ? ` (${driver.phone})` : ""}`).join(", ") || "None"}`,
+  ].join("\n");
+}
+
+async function queueFlightChangeNotifications(
+  tx: Prisma.TransactionClient,
+  input: {
+    itinerary: Awaited<ReturnType<typeof findTripDetailOrThrow>>;
+    changeLabel: string;
+  },
+) {
+  const airportIds = Array.from(
+    new Set(
+      input.itinerary.flightSegments.flatMap((segment) => [segment.departureAirportId, segment.arrivalAirportId]),
+    ),
+  );
+  const [admins, coordinators] = await Promise.all([
+    listScopedUsersForAirports(tx, UserRole.ADMIN, airportIds),
+    listScopedUsersForAirports(tx, UserRole.COORDINATOR, airportIds),
+  ]);
+
+  const route = input.itinerary.flightSegments.map((segment) => `${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`).join(" · ");
+  const flightNumbers = input.itinerary.flightSegments.map((segment) => segment.flightNumber);
+  const passengers = input.itinerary.itineraryPassengers.map((item) => ({
+    name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+    phone: item.passenger.phone,
+  }));
+  const drivers = input.itinerary.transportTasks.flatMap((task) =>
+    task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
+  );
+  const accommodation = input.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" · ") || null;
+  const text = buildFlightSummaryText({
+    changeLabel: input.changeLabel,
+    route,
+    flightNumbers,
+    passengers,
+    drivers,
+    accommodation,
+  });
+
+  for (const user of [...admins, ...coordinators]) {
+    await createQueuedNotification(tx, {
+      notificationType: NotificationType.FLIGHT_REMINDER,
+      deliveryChannel: NotificationChannel.TELEGRAM,
+      recipientUserId: user.id,
+      recipientChatId: user.telegramChatId,
+      payload: { text },
+    });
+  }
+}
+
+async function queueTransportChangeNotifications(
+  tx: Prisma.TransactionClient,
+  input: {
+    task: Prisma.TransportTaskGetPayload<{
+      include: {
+        airport: true;
+        mandir: true;
+        drivers: {
+          include: {
+            driver: true;
+          };
+        };
+      };
+    }>;
+    passengers: Array<{ id: string; firstName: string; lastName: string; phone?: string | null }>;
+    changeLabel: string;
+  },
+) {
+  const [admins, coordinators] = await Promise.all([
+    listScopedUsersForAirports(tx, UserRole.ADMIN, [input.task.airport.id]),
+    listScopedUsersForAirports(tx, UserRole.COORDINATOR, [input.task.airport.id]),
+  ]);
+  const passengers = input.passengers.map((passenger) => ({
+    name: `${passenger.firstName} ${passenger.lastName}`,
+    phone: passenger.phone,
+  }));
+  const drivers = input.task.drivers.map((entry) => ({
+    name: entry.driver.name,
+    phone: entry.driver.phone,
+  }));
+  const text = buildTransportSummaryText({
+    changeLabel: input.changeLabel,
+    taskType: input.task.taskType,
+    airportCode: input.task.airport.code,
+    scheduledTime: input.task.scheduledTimeLocal,
+    passengers,
+    drivers,
+  });
+
+  for (const user of [...admins, ...coordinators]) {
+    await createQueuedNotification(tx, {
+      notificationType:
+        input.changeLabel.includes("cancel") ? NotificationType.ASSIGNMENT_CANCELLED : NotificationType.ASSIGNMENT_CHANGED,
+      deliveryChannel: NotificationChannel.TELEGRAM,
+      recipientUserId: user.id,
+      recipientChatId: user.telegramChatId,
+      payload: { text, taskId: input.task.id },
+    });
+  }
+
+  for (const passenger of input.passengers) {
+    await createQueuedNotification(tx, {
+      notificationType:
+        input.changeLabel.includes("cancel") ? NotificationType.ASSIGNMENT_CANCELLED : NotificationType.ASSIGNMENT_CHANGED,
+      deliveryChannel: NotificationChannel.SMS,
+      recipientPassengerId: passenger.id,
+      recipientPhone: passenger.phone,
+      payload: { text },
+    });
+  }
+
+  for (const entry of input.task.drivers) {
+    await createQueuedNotification(tx, {
+      notificationType:
+        input.changeLabel.includes("cancel") ? NotificationType.ASSIGNMENT_CANCELLED : NotificationType.ASSIGNMENT_CHANGED,
+      deliveryChannel: NotificationChannel.SMS,
+      recipientDriverId: entry.driver.id,
+      recipientPhone: entry.driver.phone,
+      payload: { text },
+    });
+  }
+}
+
+async function getAssignedAirportIdsForUser(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      adminAirports: true,
+      coordinatorAirports: true,
+    },
+  });
+
+  if (!user) {
+    return null;
+  }
+
+  const airportIds =
+    user.role === UserRole.ADMIN
+      ? user.adminAirports.map((assignment) => assignment.airportId)
+      : user.role === UserRole.COORDINATOR
+        ? user.coordinatorAirports.map((assignment) => assignment.airportId)
+        : [];
+
+  return {
+    user,
+    airportIds,
+  };
+}
+
+export async function listUpcomingFlightsForUserChat(chatId: string, limit = 8) {
+  const user = await prisma.user.findUnique({
+    where: { telegramChatId: chatId },
+    include: {
+      adminAirports: { include: { airport: true } },
+      coordinatorAirports: { include: { airport: true } },
+    },
+  });
+
+  if (!user || (user.role !== UserRole.ADMIN && user.role !== UserRole.COORDINATOR)) {
+    return null;
+  }
+
+  const airportIds =
+    user.role === UserRole.ADMIN
+      ? user.adminAirports.map((assignment) => assignment.airportId)
+      : user.coordinatorAirports.map((assignment) => assignment.airportId);
+
+  if (airportIds.length === 0) {
+    return { user, flights: [] };
+  }
+
+  const flights = await prisma.flightSegment.findMany({
+    where: {
+      itinerary: { isArchived: false },
+      departureTimeUtc: { gte: new Date() },
+      OR: [
+        { departureAirportId: { in: airportIds } },
+        { arrivalAirportId: { in: airportIds } },
+      ],
+    },
+    orderBy: { departureTimeUtc: "asc" },
+    take: limit,
+    include: {
+      departureAirport: true,
+      arrivalAirport: true,
+      itinerary: {
+        include: {
+          itineraryPassengers: { include: { passenger: true } },
+          transportTasks: { include: { drivers: { include: { driver: true } }, airport: true } },
+        },
+      },
+    },
+  });
+
+  return { user, flights };
+}
+
 export async function listReminderRules() {
   return prisma.reminderRule.findMany({
     orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
@@ -2574,7 +3221,12 @@ async function queueReminderRun(
     ruleId: string;
     entityType: string;
     entityId: string;
+    deliveryChannel: NotificationChannel;
     recipientChatId?: string | null;
+    recipientPhone?: string | null;
+    recipientPassengerId?: string | null;
+    recipientDriverId?: string | null;
+    recipientUserId?: string | null;
     scheduledFor: Date;
     payload: Prisma.InputJsonValue;
   },
@@ -2593,14 +3245,21 @@ async function queueReminderRun(
     return null;
   }
 
-  const notification = await tx.notificationLog.create({
-    data: {
-      notificationType: NotificationType.RULE_REMINDER,
-      recipientChatId: input.recipientChatId ?? null,
-      payload: input.payload,
-      status: NotificationStatus.QUEUED,
-    },
+  const notification = await createQueuedNotification(tx, {
+    notificationType: NotificationType.RULE_REMINDER,
+    deliveryChannel: input.deliveryChannel,
+    recipientUserId: input.recipientUserId ?? null,
+    recipientPassengerId: input.recipientPassengerId ?? null,
+    recipientDriverId: input.recipientDriverId ?? null,
+    recipientChatId: input.recipientChatId ?? null,
+    recipientPhone: input.recipientPhone ?? null,
+    payload: input.payload,
+    dedupeKey: `rule:${input.ruleId}:${input.entityType}:${input.entityId}:${input.scheduledFor.toISOString()}:${input.deliveryChannel}:${input.recipientUserId ?? input.recipientPassengerId ?? input.recipientDriverId ?? input.recipientChatId ?? input.recipientPhone ?? "unknown"}`,
   });
+
+  if (!notification) {
+    return null;
+  }
 
   return tx.reminderRun.create({
     data: {
@@ -2660,9 +3319,15 @@ export async function evaluateReminderRules() {
           for (const segment of segments) {
             for (const item of segment.itinerary.itineraryPassengers) {
               const recipientChatId =
-                item.passenger.telegramChatId ?? item.passenger.userLinks[0]?.user.telegramChatId ?? null;
+                rule.channel === ReminderChannel.TELEGRAM
+                  ? item.passenger.telegramChatId ?? item.passenger.userLinks[0]?.user.telegramChatId ?? null
+                  : null;
+              const recipientPhone =
+                rule.channel === ReminderChannel.SMS
+                  ? item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null
+                  : null;
 
-              if (!recipientChatId) {
+              if (!recipientChatId && !recipientPhone) {
                 continue;
               }
 
@@ -2670,7 +3335,10 @@ export async function evaluateReminderRules() {
                 ruleId: rule.id,
                 entityType: "FlightSegment",
                 entityId: `${segment.id}:${item.passenger.id}`,
+                deliveryChannel: rule.channel === ReminderChannel.SMS ? NotificationChannel.SMS : NotificationChannel.TELEGRAM,
+                recipientPassengerId: item.passenger.id,
                 recipientChatId,
+                recipientPhone,
                 scheduledFor: segment.departureTimeUtc,
                 payload: {
                   text: renderReminderTemplate(rule.template, {
@@ -2707,7 +3375,12 @@ export async function evaluateReminderRules() {
 
           for (const task of tasks) {
             for (const assignment of task.drivers) {
-              if (!assignment.driver.telegramChatId) {
+              const recipientChatId =
+                rule.channel === ReminderChannel.TELEGRAM ? assignment.driver.telegramChatId : null;
+              const recipientPhone =
+                rule.channel === ReminderChannel.SMS ? assignment.driver.phone : null;
+
+              if (!recipientChatId && !recipientPhone) {
                 continue;
               }
 
@@ -2715,7 +3388,10 @@ export async function evaluateReminderRules() {
                 ruleId: rule.id,
                 entityType: "TransportTask",
                 entityId: `${task.id}:${assignment.driver.id}`,
-                recipientChatId: assignment.driver.telegramChatId,
+                deliveryChannel: rule.channel === ReminderChannel.SMS ? NotificationChannel.SMS : NotificationChannel.TELEGRAM,
+                recipientDriverId: assignment.driver.id,
+                recipientChatId,
+                recipientPhone,
                 scheduledFor: task.scheduledTimeUtc ?? now,
                 payload: {
                   text: renderReminderTemplate(rule.template, {
@@ -2750,10 +3426,213 @@ export async function evaluateReminderRules() {
   }
 }
 
+async function queueBuiltInScheduledNotifications() {
+  const now = new Date();
+  const windows = {
+    departure48hStart: new Date(now.getTime() + 48 * 60 * 60 * 1000),
+    departure48hEnd: new Date(now.getTime() + (48 * 60 * 60 + 15 * 60) * 1000),
+    departure6hStart: new Date(now.getTime() + 6 * 60 * 60 * 1000),
+    departure6hEnd: new Date(now.getTime() + (6 * 60 * 60 + 15 * 60) * 1000),
+  };
+
+  await prisma.$transaction(async (tx) => {
+    const segments48h = await tx.flightSegment.findMany({
+      where: {
+        itinerary: { isArchived: false },
+        departureTimeUtc: {
+          gte: windows.departure48hStart,
+          lte: windows.departure48hEnd,
+        },
+      },
+      include: {
+        departureAirport: true,
+        arrivalAirport: true,
+        itinerary: {
+          include: {
+            itineraryPassengers: {
+              include: {
+                passenger: {
+                  include: {
+                    userLinks: {
+                      include: {
+                        user: {
+                          select: {
+                            phone: true,
+                          },
+                        },
+                      },
+                      take: 1,
+                    },
+                  },
+                },
+              },
+            },
+            accommodations: { include: { mandir: true } },
+            transportTasks: { include: { drivers: { include: { driver: true } } } },
+          },
+        },
+      },
+    });
+
+    for (const segment of segments48h) {
+      const [admins, coordinators] = await Promise.all([
+        listScopedUsersForAirports(tx, UserRole.ADMIN, [segment.departureAirportId]),
+        listScopedUsersForAirports(tx, UserRole.COORDINATOR, [segment.departureAirportId]),
+      ]);
+
+      const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
+        name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+        phone: item.passenger.phone,
+      }));
+      const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
+        task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
+      );
+      const accommodation =
+        segment.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" · ") || null;
+      const text = buildFlightSummaryText({
+        changeLabel: "48 hour flight reminder",
+        route: `${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`,
+        flightNumbers: [segment.flightNumber],
+        passengers: passengerRows,
+        drivers: driverRows,
+        accommodation,
+      });
+
+      for (const user of [...admins, ...coordinators]) {
+        await createQueuedNotification(tx, {
+          notificationType: NotificationType.REMINDER_24H,
+          deliveryChannel: NotificationChannel.TELEGRAM,
+          recipientUserId: user.id,
+          recipientChatId: user.telegramChatId,
+          dedupeKey: `builtin:48h:telegram:${segment.id}:${user.id}`,
+          payload: { text },
+        });
+      }
+
+      for (const item of segment.itinerary.itineraryPassengers) {
+        await createQueuedNotification(tx, {
+          notificationType: NotificationType.REMINDER_24H,
+          deliveryChannel: NotificationChannel.SMS,
+          recipientPassengerId: item.passenger.id,
+          recipientPhone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
+          dedupeKey: `builtin:48h:sms:passenger:${segment.id}:${item.passenger.id}`,
+          payload: { text },
+        });
+      }
+
+      for (const task of segment.itinerary.transportTasks) {
+        for (const entry of task.drivers) {
+          await createQueuedNotification(tx, {
+            notificationType: NotificationType.REMINDER_24H,
+            deliveryChannel: NotificationChannel.SMS,
+            recipientDriverId: entry.driver.id,
+            recipientPhone: entry.driver.phone,
+            dedupeKey: `builtin:48h:sms:driver:${segment.id}:${entry.driver.id}`,
+            payload: { text },
+          });
+        }
+      }
+    }
+
+    const dropoffTasks = await tx.transportTask.findMany({
+      where: {
+        itinerary: { isArchived: false },
+        taskType: TransportTaskType.DROPOFF,
+        flightSegment: {
+          departureTimeUtc: {
+            gte: windows.departure6hStart,
+            lte: windows.departure6hEnd,
+          },
+        },
+      },
+      include: {
+        airport: true,
+        flightSegment: { include: { departureAirport: true, arrivalAirport: true } },
+        itinerary: { include: { itineraryPassengers: { include: { passenger: true } } } },
+        drivers: { include: { driver: true } },
+      },
+    });
+
+    for (const task of dropoffTasks) {
+      const text = buildTransportSummaryText({
+        changeLabel: "6 hour dropoff reminder",
+        taskType: task.taskType,
+        airportCode: task.airport.code,
+        scheduledTime: task.scheduledTimeLocal,
+        passengers: task.itinerary.itineraryPassengers.map((item) => ({
+          name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+          phone: item.passenger.phone,
+        })),
+        drivers: task.drivers.map((entry) => ({ name: entry.driver.name, phone: entry.driver.phone })),
+      });
+
+      for (const entry of task.drivers) {
+        await createQueuedNotification(tx, {
+          notificationType: NotificationType.REMINDER_2H,
+          deliveryChannel: NotificationChannel.SMS,
+          recipientDriverId: entry.driver.id,
+          recipientPhone: entry.driver.phone,
+          dedupeKey: `builtin:6h:dropoff:${task.id}:${entry.driver.id}`,
+          payload: { text },
+        });
+      }
+    }
+
+    const pickupTasks = await tx.transportTask.findMany({
+      where: {
+        itinerary: { isArchived: false },
+        taskType: TransportTaskType.PICKUP,
+        flightSegment: {
+          arrivalTimeUtc: {
+            gte: windows.departure6hStart,
+            lte: windows.departure6hEnd,
+          },
+        },
+      },
+      include: {
+        airport: true,
+        itinerary: { include: { itineraryPassengers: { include: { passenger: true } } } },
+        drivers: { include: { driver: true } },
+      },
+    });
+
+    for (const task of pickupTasks) {
+      const text = buildTransportSummaryText({
+        changeLabel: "6 hour pickup reminder",
+        taskType: task.taskType,
+        airportCode: task.airport.code,
+        scheduledTime: task.scheduledTimeLocal,
+        passengers: task.itinerary.itineraryPassengers.map((item) => ({
+          name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+          phone: item.passenger.phone,
+        })),
+        drivers: task.drivers.map((entry) => ({ name: entry.driver.name, phone: entry.driver.phone })),
+      });
+
+      for (const entry of task.drivers) {
+        await createQueuedNotification(tx, {
+          notificationType: NotificationType.REMINDER_2H,
+          deliveryChannel: NotificationChannel.SMS,
+          recipientDriverId: entry.driver.id,
+          recipientPhone: entry.driver.phone,
+          dedupeKey: `builtin:6h:pickup:${task.id}:${entry.driver.id}`,
+          payload: { text },
+        });
+      }
+    }
+  });
+}
+
+export async function processNotificationSchedules() {
+  await evaluateReminderRules();
+  await queueBuiltInScheduledNotifications();
+}
+
 export async function dispatchQueuedNotifications(limit = 10) {
   const notifications = await prisma.notificationLog.findMany({
     where: {
       status: NotificationStatus.QUEUED,
+      deliveryChannel: NotificationChannel.TELEGRAM,
       recipientChatId: { not: null },
     },
     orderBy: { createdAt: "asc" },
@@ -2763,13 +3642,26 @@ export async function dispatchQueuedNotifications(limit = 10) {
   return notifications;
 }
 
-export async function markNotificationSent(id: string) {
+export async function dispatchQueuedSmsNotifications(limit = 10) {
+  return prisma.notificationLog.findMany({
+    where: {
+      status: NotificationStatus.QUEUED,
+      deliveryChannel: NotificationChannel.SMS,
+      recipientPhone: { not: null },
+    },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+}
+
+export async function markNotificationSent(id: string, providerMessageId?: string | null) {
   await prisma.$transaction(async (tx) => {
     await tx.notificationLog.update({
       where: { id },
       data: {
         status: NotificationStatus.SENT,
         sentAt: new Date(),
+        providerMessageId: providerMessageId ?? undefined,
         attemptCount: { increment: 1 },
       },
     });
@@ -2781,13 +3673,14 @@ export async function markNotificationSent(id: string) {
   });
 }
 
-export async function markNotificationFailed(id: string, errorMessage: string) {
+export async function markNotificationFailed(id: string, errorMessage: string, providerName?: string | null) {
   await prisma.$transaction(async (tx) => {
     await tx.notificationLog.update({
       where: { id },
       data: {
         status: NotificationStatus.FAILED,
         lastError: errorMessage,
+        providerName: providerName ?? undefined,
         attemptCount: { increment: 1 },
       },
     });

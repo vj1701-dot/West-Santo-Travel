@@ -1,4 +1,4 @@
-import { listReminderRules } from "@west-santo/data";
+import { listReminderRules, listSystemReminderWorkflows } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -14,16 +14,17 @@ export default async function RemindersPage() {
     redirect("/access-denied");
   }
 
-  const rules = await listReminderRules();
+  const [rules, workflows] = await Promise.all([listReminderRules(), Promise.resolve(listSystemReminderWorkflows())]);
 
   return (
     <AppShell currentUser={currentUser}>
       <PageHeader
         eyebrow="Reminders"
-        title="Rule-based reminders"
-        description="Create simple triggers and message templates without writing code."
+        title="Notifications and reminders"
+        description="Built-in travel workflows run automatically. Advanced rules are available for extra cases."
       />
       <ReminderRuleManager
+        workflows={workflows}
         rules={rules.map((rule) => ({
           id: rule.id,
           name: rule.name,
