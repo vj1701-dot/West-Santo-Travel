@@ -203,7 +203,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
         </div>
       ) : null}
 
-      <div className="row-card__title" style={{ alignItems: "end" }}>
+      <div className="manager-toolbar">
         <label className="field" style={{ flex: 1 }}>
           <span>Search users</span>
           <input
@@ -286,58 +286,118 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
         </form>
       ) : null}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>User</th>
-            <th>Role</th>
-            <th>Airports</th>
-            <th>Identity</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredUsers.map((user) => (
-            <tr key={user.id}>
-              <td>
-                <strong>
-                  {user.firstName} {user.lastName}
-                </strong>
-                <div className="muted-inline">{user.email}</div>
-              </td>
-              <td>{user.role}</td>
-              <td>{user.airportCodes.join(", ") || "None"}</td>
-              <td>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</td>
-              <td>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    onClick={() => {
-                      if (!window.confirm(`Open edit form for ${user.firstName} ${user.lastName}?`)) {
-                        return;
-                      }
-                      setPanelMode("edit");
-                      setEditingUserId(user.id);
-                      setFormState(toFormState(user));
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button className="button-secondary" type="button" onClick={() => void handleDelete(user)}>
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {filteredUsers.length === 0 ? (
+      <div className="desktop-only">
+        <table className="data-table">
+          <thead>
             <tr>
-              <td colSpan={5}>No users found.</td>
+              <th>User</th>
+              <th>Role</th>
+              <th>Airports</th>
+              <th>Identity</th>
+              <th>Actions</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredUsers.map((user) => (
+              <tr key={user.id}>
+                <td>
+                  <strong>
+                    {user.firstName} {user.lastName}
+                  </strong>
+                  <div className="muted-inline">{user.email}</div>
+                </td>
+                <td>{user.role}</td>
+                <td>{user.airportCodes.join(", ") || "None"}</td>
+                <td>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</td>
+                <td>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm(`Open edit form for ${user.firstName} ${user.lastName}?`)) {
+                          return;
+                        }
+                        setPanelMode("edit");
+                        setEditingUserId(user.id);
+                        setFormState(toFormState(user));
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="button-secondary" type="button" onClick={() => void handleDelete(user)}>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No users found.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mobile-only">
+        {filteredUsers.length === 0 ? (
+          <div className="compact-card">
+            <p>No users found.</p>
+          </div>
+        ) : (
+          <div className="manager-list">
+            {filteredUsers.map((user) => (
+              <article key={user.id} className="compact-card manager-card">
+                <div className="manager-card__header">
+                  <div>
+                    <strong>
+                      {user.firstName} {user.lastName}
+                    </strong>
+                    <div className="muted-inline">{user.email}</div>
+                  </div>
+                </div>
+                <div className="manager-card__body">
+                  <div className="manager-card__meta">
+                    <div>
+                      <span>Role</span>
+                      <strong>{user.role}</strong>
+                    </div>
+                    <div>
+                      <span>Airports</span>
+                      <strong>{user.airportCodes.join(", ") || "None"}</strong>
+                    </div>
+                    <div>
+                      <span>Identity</span>
+                      <strong>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</strong>
+                    </div>
+                  </div>
+                  <div className="manager-card__actions">
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm(`Open edit form for ${user.firstName} ${user.lastName}?`)) {
+                          return;
+                        }
+                        setPanelMode("edit");
+                        setEditingUserId(user.id);
+                        setFormState(toFormState(user));
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="button-secondary" type="button" onClick={() => void handleDelete(user)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

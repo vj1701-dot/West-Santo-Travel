@@ -190,7 +190,7 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
         </div>
       ) : null}
 
-      <div className="row-card__title" style={{ alignItems: "end" }}>
+      <div className="manager-toolbar">
         <label className="field" style={{ flex: 1 }}>
           <span>Search passengers</span>
           <input
@@ -273,60 +273,122 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
         </form>
       ) : null}
 
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>Passenger</th>
-            <th>Type</th>
-            <th>Trips</th>
-            <th>Telegram</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredPassengers.map((passenger) => (
-            <tr key={passenger.id}>
-              <td>
-                <strong>
-                  {passenger.firstName} {passenger.lastName}
-                </strong>
-                <div className="muted-inline">
-                  {passenger.phone ?? passenger.email ?? passenger.legalName ?? "No contact"}
-                </div>
-              </td>
-              <td>{passenger.passengerType}</td>
-              <td>{passenger.itineraryCount}</td>
-              <td>{passenger.telegramChatId ? "Linked" : "Pending"}</td>
-              <td>
-                <div style={{ display: "flex", gap: "0.5rem" }}>
-                  <button
-                    className="button-secondary"
-                    type="button"
-                    onClick={() => {
-                      if (!window.confirm(`Open edit form for ${passenger.firstName} ${passenger.lastName}?`)) {
-                        return;
-                      }
-                      setPanelMode("edit");
-                      setEditingPassengerId(passenger.id);
-                      setFormState(toFormState(passenger));
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button className="button-secondary" type="button" onClick={() => void handleDelete(passenger)}>
-                    Delete
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-          {filteredPassengers.length === 0 ? (
+      <div className="desktop-only">
+        <table className="data-table">
+          <thead>
             <tr>
-              <td colSpan={5}>No passengers found.</td>
+              <th>Passenger</th>
+              <th>Type</th>
+              <th>Trips</th>
+              <th>Telegram</th>
+              <th>Actions</th>
             </tr>
-          ) : null}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {filteredPassengers.map((passenger) => (
+              <tr key={passenger.id}>
+                <td>
+                  <strong>
+                    {passenger.firstName} {passenger.lastName}
+                  </strong>
+                  <div className="muted-inline">
+                    {passenger.phone ?? passenger.email ?? passenger.legalName ?? "No contact"}
+                  </div>
+                </td>
+                <td>{passenger.passengerType}</td>
+                <td>{passenger.itineraryCount}</td>
+                <td>{passenger.telegramChatId ? "Linked" : "Pending"}</td>
+                <td>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm(`Open edit form for ${passenger.firstName} ${passenger.lastName}?`)) {
+                          return;
+                        }
+                        setPanelMode("edit");
+                        setEditingPassengerId(passenger.id);
+                        setFormState(toFormState(passenger));
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="button-secondary" type="button" onClick={() => void handleDelete(passenger)}>
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filteredPassengers.length === 0 ? (
+              <tr>
+                <td colSpan={5}>No passengers found.</td>
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mobile-only">
+        {filteredPassengers.length === 0 ? (
+          <div className="compact-card">
+            <p>No passengers found.</p>
+          </div>
+        ) : (
+          <div className="manager-list">
+            {filteredPassengers.map((passenger) => (
+              <article key={passenger.id} className="compact-card manager-card">
+                <div className="manager-card__header">
+                  <div>
+                    <strong>
+                      {passenger.firstName} {passenger.lastName}
+                    </strong>
+                    <div className="muted-inline">
+                      {passenger.phone ?? passenger.email ?? passenger.legalName ?? "No contact"}
+                    </div>
+                  </div>
+                </div>
+                <div className="manager-card__body">
+                  <div className="manager-card__meta">
+                    <div>
+                      <span>Type</span>
+                      <strong>{passenger.passengerType}</strong>
+                    </div>
+                    <div>
+                      <span>Trips</span>
+                      <strong>{passenger.itineraryCount}</strong>
+                    </div>
+                    <div>
+                      <span>Telegram</span>
+                      <strong>{passenger.telegramChatId ? "Linked" : "Pending"}</strong>
+                    </div>
+                  </div>
+                  <div className="manager-card__actions">
+                    <button
+                      className="button-secondary"
+                      type="button"
+                      onClick={() => {
+                        if (!window.confirm(`Open edit form for ${passenger.firstName} ${passenger.lastName}?`)) {
+                          return;
+                        }
+                        setPanelMode("edit");
+                        setEditingPassengerId(passenger.id);
+                        setFormState(toFormState(passenger));
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button className="button-secondary" type="button" onClick={() => void handleDelete(passenger)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

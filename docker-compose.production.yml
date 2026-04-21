@@ -31,7 +31,8 @@ services:
       MANDIR_IMPORT_ENABLED: ${MANDIR_IMPORT_ENABLED:-true}
       NEXT_TELEMETRY_DISABLED: "1"
     command: >
-      sh -c "npx prisma db push --schema prisma/schema.prisma &&
+      sh -c "(npx prisma migrate deploy --schema prisma/schema.prisma ||
+      npx prisma db push --accept-data-loss --schema prisma/schema.prisma) &&
       node --import tsx prisma/seed.mjs"
     restart: "no"
 
@@ -51,6 +52,7 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-replace-with-google-client-id}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-replace-with-google-client-secret}
+      GOOGLE_SHEETS_SYNC_SECRET: ${GOOGLE_SHEETS_SYNC_SECRET:-}
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
       - "3002:3000"
@@ -82,6 +84,9 @@ services:
     environment:
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
       SCHEDULER_TICK_MS: ${SCHEDULER_TICK_MS:-60000}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_FROM_NUMBER: ${TWILIO_FROM_NUMBER:-}
 
 volumes:
   postgres_data:

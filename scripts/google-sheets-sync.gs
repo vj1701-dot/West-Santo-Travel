@@ -67,7 +67,10 @@ function readSheetRows_(sheet) {
       continue;
     }
 
-    rows.push(normalizeRow_(row, headerMap, index + 1));
+    const normalizedRow = normalizeRow_(row, headerMap, index + 1);
+    if (normalizedRow) {
+      rows.push(normalizedRow);
+    }
   }
 
   return rows;
@@ -93,16 +96,40 @@ function normalizeRow_(row, headerMap, sheetRowNumber) {
   const airline = normalizeText_(row[headerMap["Airline"]]);
   const flightNumber = normalizeText_(row[headerMap["Flight #"]]).toUpperCase();
   const departureAirport = normalizeCode_(row[headerMap["Departure From"]]);
-  const departureDate = normalizeDate_(row[headerMap["Departure Date"]]);
-  const departureTime = normalizeTime_(row[headerMap["Dep Time"]]);
   const arrivalAirport = normalizeCode_(row[headerMap["Arrival at"]]);
-  const arrivalDate = normalizeDate_(row[headerMap["Arrival Date"]]);
-  const arrivalTime = normalizeTime_(row[headerMap["Arrival Time"]]);
   const firstName = normalizeText_(row[headerMap["First Name"]]);
   const lastName = normalizeText_(row[headerMap["Last Name"]]);
   const cost = normalizeText_(row[headerMap["Cost"]]) || null;
   const dropoffDriverName = normalizeText_(row[headerMap["Drop off"]]) || null;
   const pickupDriverName = normalizeText_(row[headerMap["Pickup"]]) || null;
+  const departureDateRaw = normalizeText_(row[headerMap["Departure Date"]]);
+  const departureTimeRaw = normalizeText_(row[headerMap["Dep Time"]]);
+  const arrivalDateRaw = normalizeText_(row[headerMap["Arrival Date"]]);
+  const arrivalTimeRaw = normalizeText_(row[headerMap["Arrival Time"]]);
+
+  if (
+    !locatorNumber &&
+    !airline &&
+    !flightNumber &&
+    !departureAirport &&
+    !departureDateRaw &&
+    !departureTimeRaw &&
+    !arrivalAirport &&
+    !arrivalDateRaw &&
+    !arrivalTimeRaw &&
+    !firstName &&
+    !lastName &&
+    !cost &&
+    !dropoffDriverName &&
+    !pickupDriverName
+  ) {
+    return null;
+  }
+
+  const departureDate = departureDateRaw ? normalizeDate_(departureDateRaw) : "";
+  const departureTime = departureTimeRaw ? normalizeTime_(departureTimeRaw) : "";
+  const arrivalDate = arrivalDateRaw ? normalizeDate_(arrivalDateRaw) : "";
+  const arrivalTime = arrivalTimeRaw ? normalizeTime_(arrivalTimeRaw) : "";
 
   if (!airline || !flightNumber || !departureAirport || !departureDate || !departureTime || !arrivalAirport || !arrivalDate || !arrivalTime || !firstName || !lastName) {
     throw new Error("Row " + sheetRowNumber + " is missing required trip or passenger data.");
