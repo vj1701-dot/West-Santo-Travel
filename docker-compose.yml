@@ -52,6 +52,7 @@ services:
       NEXT_PUBLIC_BETTER_AUTH_URL: ${NEXT_PUBLIC_BETTER_AUTH_URL:-http://localhost:3000}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-replace-with-google-client-id}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-replace-with-google-client-secret}
+      GOOGLE_SHEETS_SYNC_SECRET: ${GOOGLE_SHEETS_SYNC_SECRET:-}
       NEXT_TELEMETRY_DISABLED: "1"
     ports:
       - "3000:3000"

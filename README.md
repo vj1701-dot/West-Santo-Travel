@@ -282,6 +282,7 @@ Minimum values to review in `.env`:
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` for seeded admin credentials
 - `TELEGRAM_BOT_TOKEN` if you want a live bot
 - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` if you want live SMS delivery
+- `GOOGLE_SHEETS_SYNC_SECRET` if you want Google Apps Script to sync a sheet into live trips
 - `AIRPORT_IMPORT_URL` if you want to override the default OurAirports feed during seed/bootstrap
 - `MANDIR_IMPORT_ENABLED` if you want to skip the BAPS mandir import during seed/bootstrap
 
@@ -459,6 +460,14 @@ The public page at `/submission` accepts:
 - optional notes
 
 Those submissions are stored for admin/coordinator review. Staff then opens the submission in a full completion editor, adds booking/transport/accommodation details, and saves it into `/itineraries`. Reject and duplicate-flag actions remain available during review.
+
+### Google Sheets Sync
+
+- The app supports an authenticated hourly snapshot sync from Google Apps Script at `POST /api/sync/google-sheets`.
+- Set `GOOGLE_SHEETS_SYNC_SECRET` in the app environment and send the same value in the `x-sync-secret` header from Apps Script.
+- The checked-in Apps Script starter file is [scripts/google-sheets-sync.gs](/Users/sadhuvinamrajivandas/West Santo Travel /scripts/google-sheets-sync.gs).
+- The sync is intended for one-row-per-passenger sheets and groups rows into trips before pushing them into the app.
+- Missing trips from the latest sheet snapshot are archived as cancelled itineraries instead of being deleted.
 
 ## Known Gaps And Next Useful Slices
 
