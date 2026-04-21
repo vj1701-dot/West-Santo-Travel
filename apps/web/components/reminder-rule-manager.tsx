@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 type ReminderRuleRecord = {
   id: string;
@@ -24,16 +24,120 @@ type WorkflowRecord = {
   schedule: string;
 };
 
+type UpcomingFlight = {
+  id: string;
+  flightNumber: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  departureTimeLocal: string;
+  departureTimeZone: string;
+  passengerCount: number;
+};
+
 export function ReminderRuleManager({
   rules,
   workflows,
+  upcomingFlights: initialFlights,
 }: {
   rules: ReminderRuleRecord[];
   workflows: readonly WorkflowRecord[];
+  upcomingFlights: UpcomingFlight[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
+
+  const [upcomingFlights, setUpcomingFlights] = useState(initialFlights);
+  const [isRefreshingFlights, setIsRefreshingFlights] = useState(false);
+  const [flightsLoadError, setFlightsLoadError] = useState<string | null>(null);
+
+  const [sendFlightId, setSendFlightId] = useState("");
+  const [sendChannel, setSendChannel] = useState<"TELEGRAM" | "SMS" | "TELEGRAM_SMS">("TELEGRAM");
+  const [sendMessage, setSendMessage] = useState("");
+  const [sendStatus, setSendStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [isSending, setIsSending] = useState(false);
+
+  // Refresh flights when component mounts or every 30 seconds
+  useEffect(() => {
+    const refreshFlights = async () => {
+      try {
+        setFlightsLoadError(null);
+        const res = await fetch("/api/flights/upcoming");
+        if (res.ok) {
+          const data = await res.json();
+          const flights = Array.isArray(data.data) ? data.data : [];
+          setUpcomingFlights(flights);
+          console.log(`Loaded ${flights.length} upcoming flights`);
+        } else {
+          const error = await res.text();
+          console.error("API error:", res.status, error);
+          setFlightsLoadError(`API error: ${res.status}`);
+        }
+      } catch (error) {
+        console.error("Failed to refresh flights:", error);
+        setFlightsLoadError(error instanceof Error ? error.message : "Network error");
+      }
+    };
+
+    refreshFlights();
+    const interval = setInterval(refreshFlights, 30000); // Refresh every 30 seconds
+    return () => clearInterval(interval);
+  }, []);
+
+  async function refreshFlightsNow() {
+    setIsRefreshingFlights(true);
+    setFlightsLoadError(null);
+    try {
+      const res = await fetch("/api/flights/upcoming");
+      if (res.ok) {
+        const data = await res.json();
+        const flights = Array.isArray(data.data) ? data.data : [];
+        setUpcomingFlights(flights);
+        setSendStatus({ ok: true, text: `Flight list updated. Found ${flights.length} flights.` });
+        console.log(`Refreshed: Found ${flights.length} upcoming flights`);
+      } else {
+        const error = await res.text();
+        console.error("API error:", res.status, error);
+        setSendStatus({ ok: false, text: `Failed to refresh flight list (${res.status})` });
+        setFlightsLoadError(`API error: ${res.status}`);
+      }
+    } catch (error) {
+      console.error("Network error:", error);
+      setSendStatus({ ok: false, text: "Network error while refreshing flights." });
+      setFlightsLoadError(error instanceof Error ? error.message : "Network error");
+    } finally {
+      setIsRefreshingFlights(false);
+    }
+  }
+
+  async function sendNow() {
+    if (!sendFlightId) return;
+    setIsSending(true);
+    setSendStatus(null);
+    try {
+      const res = await fetch("/api/reminders/send-now", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          flightSegmentId: sendFlightId,
+          channel: sendChannel,
+          message: sendMessage.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const count: number = data.data?.queued ?? 0;
+        setSendStatus({ ok: true, text: `${count} notification${count !== 1 ? "s" : ""} queued.` });
+        setSendMessage("");
+      } else {
+        setSendStatus({ ok: false, text: data.error?.message ?? "Failed to queue reminders." });
+      }
+    } catch {
+      setSendStatus({ ok: false, text: "Network error. Please try again." });
+    } finally {
+      setIsSending(false);
+    }
+  }
 
   async function submitJson(url: string, method: string, body: unknown) {
     const response = await fetch(url, {
@@ -51,6 +155,20 @@ export function ReminderRuleManager({
     setMessage("Saved.");
     startTransition(() => router.refresh());
     return true;
+  }
+
+  function formatFlightLabel(f: UpcomingFlight) {
+    const d = new Date(f.departureTimeLocal);
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const month = months[d.getUTCMonth()];
+    const day = d.getUTCDate();
+    const h = d.getUTCHours();
+    const min = d.getUTCMinutes().toString().padStart(2, "0");
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    const label = `${month} ${day}, ${h12}:${min} ${ampm}`;
+    const pax = f.passengerCount === 1 ? "1 pax" : `${f.passengerCount} pax`;
+    return `${f.flightNumber} · ${f.departureAirport} → ${f.arrivalAirport} · ${label} · ${pax}`;
   }
 
   return (
@@ -85,6 +203,85 @@ export function ReminderRuleManager({
           </tbody>
         </table>
       </div>
+      <div className="table-panel stack" style={{ gap: "1rem" }}>
+        <h3>Send flight reminder now</h3>
+        <p style={{ color: "var(--color-muted, #6b7280)", fontSize: "0.875rem" }}>
+          Select an upcoming flight and send an immediate reminder to all passengers via your chosen channel.
+        </p>
+        <label className="field">
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span>
+              Flight
+              {upcomingFlights.length > 0 && (
+                <span style={{ marginLeft: "0.5rem", fontSize: "0.875rem", color: "var(--color-muted, #6b7280)" }}>
+                  ({upcomingFlights.length})
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => void refreshFlightsNow()}
+              disabled={isRefreshingFlights}
+              style={{ padding: "0.4rem 0.8rem", fontSize: "0.75rem" }}
+            >
+              {isRefreshingFlights ? "Refreshing…" : "Refresh"}
+            </button>
+          </span>
+          {flightsLoadError && (
+            <div style={{ color: "var(--color-danger, #dc2626)", fontSize: "0.875rem", marginBottom: "0.5rem" }}>
+              ⚠️ Error loading flights: {flightsLoadError}
+            </div>
+          )}
+          <select value={sendFlightId} onChange={(e) => { setSendFlightId(e.target.value); setSendStatus(null); }}>
+            <option value="">— {upcomingFlights.length === 0 ? "No flights available" : "select a flight"} —</option>
+            {upcomingFlights.map((f) => (
+              <option key={f.id} value={f.id}>{formatFlightLabel(f)}</option>
+            ))}
+          </select>
+        </label>
+        <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
+          <legend style={{ fontSize: "0.875rem", fontWeight: 500, marginBottom: "0.5rem" }}>Channel</legend>
+          <div style={{ display: "flex", gap: "1.25rem", flexWrap: "wrap" }}>
+            {(["TELEGRAM", "SMS", "TELEGRAM_SMS"] as const).map((ch) => (
+              <label key={ch} style={{ display: "flex", alignItems: "center", gap: "0.4rem", cursor: "pointer", fontSize: "0.9rem" }}>
+                <input
+                  type="radio"
+                  name="sendChannel"
+                  value={ch}
+                  checked={sendChannel === ch}
+                  onChange={() => setSendChannel(ch)}
+                />
+                {ch === "TELEGRAM" ? "Telegram" : ch === "SMS" ? "SMS" : "SMS + Telegram"}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+        <label className="field">
+          <span>Custom message <span style={{ fontWeight: 400, color: "var(--color-muted, #6b7280)" }}>(optional — leave blank for auto-generated summary)</span></span>
+          <textarea
+            rows={3}
+            value={sendMessage}
+            onChange={(e) => setSendMessage(e.target.value)}
+            placeholder="e.g. Reminder: your flight departs soon. Please check in."
+          />
+        </label>
+        {sendStatus ? (
+          <p style={{ color: sendStatus.ok ? "var(--color-success, #16a34a)" : "var(--color-danger, #dc2626)", fontSize: "0.875rem" }}>
+            {sendStatus.text}
+          </p>
+        ) : null}
+        <div>
+          <button
+            type="button"
+            disabled={!sendFlightId || isSending}
+            onClick={() => void sendNow()}
+          >
+            {isSending ? "Sending…" : "Send reminder"}
+          </button>
+        </div>
+      </div>
+
       <div className="manager-layout">
         <div className="table-panel">
           <table className="data-table">

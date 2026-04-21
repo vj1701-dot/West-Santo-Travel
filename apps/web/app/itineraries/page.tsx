@@ -18,7 +18,21 @@ export default async function ItinerariesPage() {
         title="Itineraries"
         tooltip="Review complete trip records, flight legs, passengers, booking data, transport, and accommodation"
       />
-      <ItineraryList itineraries={itineraries} role={currentUser.role} />
+      <ItineraryList
+        itineraries={itineraries.map(({ booking: _booking, flightSegments, transportTasks, ...rest }) => ({
+          ...rest,
+          flightSegments: flightSegments.map(({ departureAirport, arrivalAirport, ...seg }) => ({
+            ...seg,
+            departureAirport: { code: departureAirport.code, name: departureAirport.name, city: departureAirport.city },
+            arrivalAirport: { code: arrivalAirport.code, name: arrivalAirport.name, city: arrivalAirport.city },
+          })),
+          transportTasks: transportTasks.map(({ airport, ...task }) => ({
+            ...task,
+            airport: { code: airport.code },
+          })),
+        }))}
+        role={currentUser.role}
+      />
     </AppShell>
   );
 }

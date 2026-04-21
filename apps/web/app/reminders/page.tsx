@@ -1,4 +1,4 @@
-import { listReminderRules, listSystemReminderWorkflows } from "@west-santo/data";
+import { listReminderRules, listSystemReminderWorkflows, listUpcomingFlightSegments } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -14,7 +14,11 @@ export default async function RemindersPage() {
     redirect("/access-denied");
   }
 
-  const [rules, workflows] = await Promise.all([listReminderRules(), Promise.resolve(listSystemReminderWorkflows())]);
+  const [rules, workflows, upcomingSegments] = await Promise.all([
+    listReminderRules(),
+    Promise.resolve(listSystemReminderWorkflows()),
+    listUpcomingFlightSegments(),
+  ]);
 
   return (
     <AppShell currentUser={currentUser}>
@@ -36,6 +40,15 @@ export default async function RemindersPage() {
           template: rule.template,
           lastRunAt: rule.lastRunAt?.toISOString() ?? null,
           lastError: rule.lastError,
+        }))}
+        upcomingFlights={upcomingSegments.map((s) => ({
+          id: s.id,
+          flightNumber: s.flightNumber,
+          departureAirport: s.departureAirport.code,
+          arrivalAirport: s.arrivalAirport.code,
+          departureTimeLocal: s.departureTimeLocal.toISOString(),
+          departureTimeZone: s.departureTimeZone,
+          passengerCount: s.itinerary.itineraryPassengers.length,
         }))}
       />
     </AppShell>

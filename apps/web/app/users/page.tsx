@@ -40,8 +40,8 @@ export default async function UsersPage() {
           identityLinkedAt: user.identityLinkedAt?.toISOString() ?? null,
           lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
           linkedPassengerName:
-            user.passengerUserLinks[0]
-              ? `${user.passengerUserLinks[0].passenger.firstName} ${user.passengerUserLinks[0].passenger.lastName}`
+            user.passengerUserLinks
+              ? `${user.passengerUserLinks.passenger.firstName} ${user.passengerUserLinks.passenger.lastName}`
               : null,
         }))}
       />

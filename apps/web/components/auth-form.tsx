@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, type MouseEvent, useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
 
@@ -25,32 +25,29 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
 
     try {
       if (isSignUp) {
-        await authClient.signUp({
-          email,
-          password,
-          name: fullName,
-          fetchOptions: {
+        await authClient.signUp.email(
+          { email, password, name: fullName },
+          {
             onSuccess: () => {
               (window.location as any) = "/";
             },
             onError: (ctx) => {
               setMessage(ctx.error.message ?? "Sign up failed");
             },
-          },
-        });
+          }
+        );
       } else {
-        await authClient.signIn({
-          email,
-          password,
-          fetchOptions: {
+        await authClient.signIn.email(
+          { email, password, rememberMe },
+          {
             onSuccess: () => {
               (window.location as any) = "/";
             },
             onError: (ctx) => {
               setMessage(ctx.error.message ?? "Sign in failed");
             },
-          },
-        });
+          }
+        );
       }
     } finally {
       setIsPending(false);
@@ -356,11 +353,11 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
                 textDecoration: "none",
                 transition: "color 0.2s ease",
               }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.color = "rgba(255, 200, 150, 1)";
+              onMouseEnter={(e: MouseEvent<HTMLAnchorElement>) => {
+                e.currentTarget.style.color = "rgba(255, 200, 150, 1)";
               }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.color = "rgba(255, 200, 150, 0.7)";
+              onMouseLeave={(e: MouseEvent<HTMLAnchorElement>) => {
+                e.currentTarget.style.color = "rgba(255, 200, 150, 0.7)";
               }}
             >
               Forgot password?
@@ -491,11 +488,11 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
             fontWeight: "600",
             transition: "color 0.2s ease",
           }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.color = "rgba(255, 200, 150, 1)";
+          onMouseEnter={(e: MouseEvent<HTMLAnchorElement>) => {
+            e.currentTarget.style.color = "rgba(255, 200, 150, 1)";
           }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLAnchorElement).style.color = "rgba(255, 200, 150, 0.7)";
+          onMouseLeave={(e: MouseEvent<HTMLAnchorElement>) => {
+            e.currentTarget.style.color = "rgba(255, 200, 150, 0.7)";
           }}
         >
           {isSignUp ? "Sign in" : "Sign up"}
