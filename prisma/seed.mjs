@@ -202,6 +202,20 @@ async function importMandirs() {
 }
 
 async function main() {
+  const [existingUsers, existingPassengers, existingItineraries, existingDrivers] = await Promise.all([
+    prisma.user.count(),
+    prisma.passenger.count(),
+    prisma.itinerary.count(),
+    prisma.driver.count(),
+  ]);
+
+  if (existingUsers > 0 || existingPassengers > 0 || existingItineraries > 0 || existingDrivers > 0) {
+    console.log(
+      `[seed] existing application data detected (users=${existingUsers}, passengers=${existingPassengers}, itineraries=${existingItineraries}, drivers=${existingDrivers}); skipping default seed`,
+    );
+    return;
+  }
+
   await prisma.notificationLog.deleteMany();
   await prisma.auditLog.deleteMany();
   await prisma.transportTaskStatusHistory.deleteMany();

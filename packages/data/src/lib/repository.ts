@@ -4890,3 +4890,124 @@ export async function markNotificationFailed(id: string, errorMessage: string, p
     });
   });
 }
+
+export async function listUpcomingFlightSegments(limit = 30) {
+  return prisma.flightSegment.findMany({
+    where: {
+      itinerary: { isArchived: false },
+      // Temporarily show flights from the last 24 hours to debug timezone issues
+      departureTimeUtc: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+    },
+    orderBy: { departureTimeUtc: "asc" },
+    take: limit,
+    include: {
+      departureAirport: true,
+      arrivalAirport: true,
+      itinerary: {
+        include: {
+          itineraryPassengers: { include: { passenger: true } },
+        },
+      },
+    },
+  });
+}
+
+export async function queueOneOffFlightReminder(input: {
+  flightSegmentId: string;
+  channel: "TELEGRAM" | "SMS" | "TELEGRAM_SMS";
+  message?: string | null;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const segment = await tx.flightSegment.findUnique({
+      where: { id: input.flightSegmentId },
+      include: {
+        departureAirport: true,
+        arrivalAirport: true,
+        itinerary: {
+          include: {
+            itineraryPassengers: {
+              include: {
+                passenger: {
+                  include: {
+                    userLinks: {
+                      include: { user: { select: { phone: true, telegramChatId: true } } },
+                      take: 1,
+                    },
+                  },
+                },
+              },
+            },
+            accommodations: { include: { mandir: true } },
+            transportTasks: { include: { drivers: { include: { driver: true } } } },
+          },
+        },
+      },
+    });
+
+    if (!segment) {
+      throw new Error("Flight segment not found.");
+    }
+
+    const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
+      name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+      phone: item.passenger.phone,
+    }));
+    const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
+      task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
+    );
+    const accommodation =
+      segment.itinerary.accommodations
+        .map((item) => item.notes ?? item.mandir?.name)
+        .filter(Boolean)
+        .join(" · ") || null;
+
+    const text =
+      input.message?.trim() ||
+      buildFlightSummaryText({
+        changeLabel: "Flight reminder",
+        route: `${segment.departureAirport.code} → ${segment.arrivalAirport.code}`,
+        flightNumbers: [segment.flightNumber],
+        passengers: passengerRows,
+        drivers: driverRows,
+        accommodation,
+      });
+
+    // Minute-level bucket so re-sends after 1 minute are allowed
+    const minuteBucket = Math.floor(Date.now() / 60_000);
+
+    let queued = 0;
+
+    for (const item of segment.itinerary.itineraryPassengers) {
+      const passenger = item.passenger;
+
+      if (input.channel === "TELEGRAM" || input.channel === "TELEGRAM_SMS") {
+        const chatId =
+          passenger.telegramChatId ?? passenger.userLinks[0]?.user.telegramChatId ?? null;
+        const result = await createQueuedNotification(tx, {
+          notificationType: NotificationType.FLIGHT_REMINDER,
+          deliveryChannel: NotificationChannel.TELEGRAM,
+          recipientPassengerId: passenger.id,
+          recipientChatId: chatId,
+          dedupeKey: `oneof:${segment.id}:telegram:${passenger.id}:${minuteBucket}`,
+          payload: { text },
+        });
+        if (result) queued++;
+      }
+
+      if (input.channel === "SMS" || input.channel === "TELEGRAM_SMS") {
+        const phone = passenger.phone ?? passenger.userLinks[0]?.user.phone ?? null;
+        const result = await createQueuedNotification(tx, {
+          notificationType: NotificationType.FLIGHT_REMINDER,
+          deliveryChannel: NotificationChannel.SMS,
+          recipientPassengerId: passenger.id,
+          recipientPhone: phone,
+          dedupeKey: `oneof:${segment.id}:sms:${passenger.id}:${minuteBucket}`,
+          payload: { text },
+        });
+        if (result) queued++;
+      }
+    }
+
+    return { queued };
+  });
+}
