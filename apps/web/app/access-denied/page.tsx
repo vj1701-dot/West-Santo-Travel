@@ -21,9 +21,6 @@ export default function AccessDeniedPage() {
           <Link className="pill" href="/sign-in" style={{ display: "inline-block", textDecoration: "none" }}>
             Sign In
           </Link>
-          <Link className="button-secondary" href="/sign-up" style={{ display: "inline-block", textDecoration: "none" }}>
-            Sign Up
-          </Link>
           <Link className="button-secondary" href="/" style={{ display: "inline-block", textDecoration: "none" }}>
             Return Home
           </Link>

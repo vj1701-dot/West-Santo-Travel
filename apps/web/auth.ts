@@ -43,7 +43,7 @@ export const auth = betterAuth({
   },
   emailAndPassword: {
     enabled: true,
-    disableSignUp: false,
+    disableSignUp: true,
     requireEmailVerification: false,
     autoSignIn: true,
   },
@@ -51,7 +51,7 @@ export const auth = betterAuth({
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID ?? "development-google-client-id",
       clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "development-google-client-secret",
-      disableSignUp: false,
+      disableSignUp: true,
     },
   },
 });

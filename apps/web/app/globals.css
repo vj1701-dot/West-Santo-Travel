@@ -1171,3 +1171,8 @@ button:active {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+.auth-input-readable::placeholder {
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 1;
+}

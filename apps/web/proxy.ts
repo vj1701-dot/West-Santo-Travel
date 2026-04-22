@@ -6,7 +6,7 @@ import { auth } from "@/auth";
 
 const ACCESS_DENIED_MESSAGE = "Your account is not enabled for this application. Contact an admin.";
 
-const PROXY_ALLOWLIST = ["/api/auth", "/api/bot/link-telegram", "/access-denied", "/sign-in", "/sign-up"];
+const PROXY_ALLOWLIST = ["/api/auth", "/api/bot/link-telegram", "/access-denied", "/sign-in"];
 
 async function protectedProxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, type MouseEvent, useState } from "react";
+import { FormEvent, useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
 
@@ -100,6 +100,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
               Full Name
             </label>
             <input
+              className="auth-input-readable"
               id="fullName"
               type="text"
               placeholder="John Doe"
@@ -145,6 +146,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
             Email
           </label>
           <input
+            className="auth-input-readable"
             id="email"
             type="email"
             placeholder="you@example.com"
@@ -190,6 +192,7 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
           </label>
           <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
             <input
+              className="auth-input-readable"
               id="password"
               type={showPassword ? "text" : "password"}
               placeholder="••••••••"
@@ -263,10 +266,11 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
               Confirm Password
             </label>
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-              <input
-                id="confirmPassword"
-                type={showConfirmPassword ? "text" : "password"}
-                placeholder="••••••••"
+            <input
+              className="auth-input-readable"
+              id="confirmPassword"
+              type={showConfirmPassword ? "text" : "password"}
+              placeholder="••••••••"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
@@ -469,35 +473,6 @@ export function AuthForm({ mode }: { mode: "sign-in" | "sign-up" }) {
         <GoogleIconNew />
         Continue with Google
       </button>
-
-      {/* Sign in / Sign up link */}
-      <p
-        style={{
-          textAlign: "center",
-          marginTop: "1.5rem",
-          fontSize: "0.875rem",
-          color: "rgba(255, 255, 255, 0.7)",
-        }}
-      >
-        {isSignUp ? "Already have an account? " : "Don't have an account? "}
-        <Link
-          href={isSignUp ? "/sign-in" : "/sign-up"}
-          style={{
-            color: "rgba(255, 200, 150, 0.7)",
-            textDecoration: "none",
-            fontWeight: "600",
-            transition: "color 0.2s ease",
-          }}
-          onMouseEnter={(e: MouseEvent<HTMLAnchorElement>) => {
-            e.currentTarget.style.color = "rgba(255, 200, 150, 1)";
-          }}
-          onMouseLeave={(e: MouseEvent<HTMLAnchorElement>) => {
-            e.currentTarget.style.color = "rgba(255, 200, 150, 0.7)";
-          }}
-        >
-          {isSignUp ? "Sign in" : "Sign up"}
-        </Link>
-      </p>
 
       {/* Error/Success message */}
       {message ? (

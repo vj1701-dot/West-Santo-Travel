@@ -7,10 +7,10 @@ coverage
 .DS_Store
 .env
 .env.local
+.env.production
 *.log
 .cursor/mcp.json
 .vscode/mcp.json
 skills
 .vscode
-
 
