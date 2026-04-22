@@ -8,625 +8,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id                         String                       @id @default(uuid()) @db.Uuid
-  email                      String                       @unique
-  name                       String?
-  emailVerified              Boolean                      @default(false)
-  image                      String?
-  phone                      String?
-  firstName                  String                       @default("")
-  lastName                   String                       @default("")
-  role                       UserRole                     @default(PASSENGER)
-  isActive                   Boolean                      @default(true)
-  accessProvisionedAt        DateTime                     @default(now()) @db.Timestamptz(6)
-  identityProvider           String?
-  identitySubject            String?
-  identityLinkedAt           DateTime?                    @db.Timestamptz(6)
-  lastLoginAt                DateTime?                    @db.Timestamptz(6)
-  telegramChatId             String?                      @unique
-  telegramUsername           String?
-  createdAt                  DateTime                     @default(now()) @db.Timestamptz(6)
-  updatedAt                  DateTime                     @updatedAt @db.Timestamptz(6)
-  accounts                   Account[]
-  adminAirports              AdminAirport[]
-  adminMandirs               AdminMandir[]
-  aiQueryLogs                AiQueryLog[]
-  approvalRequestsMade       ApprovalRequest[]            @relation("ApprovalRequestedBy")
-  approvalRequestsReviewed   ApprovalRequest[]            @relation("ApprovalReviewedBy")
-  auditUserActor             AuditLog[]                   @relation("AuditActorUser")
-  coordinatorAirports        CoordinatorAirport[]
-  coordinatorMandirs         CoordinatorMandir[]
-  csvImportJobs              CsvImportJob[]
-  resolvedDuplicateFlags     DuplicateFlag[]
-  createdItineraries         Itinerary[]                  @relation("ItineraryCreatedBy")
-  notificationUserRecipients NotificationLog[]
-  passengerUserLinks         PassengerUserLink?
-  reviewedPublicSubmissions  PublicSubmission[]
-  createdReminderRules       ReminderRule[]
-  sessions                   Session[]
-  createdTransportTasks      TransportTask[]              @relation("TransportTaskCreatedBy")
-  assignedTransportTasks     TransportTaskDriver[]        @relation("TransportTaskAssignedBy")
-  transportStatusChanges     TransportTaskStatusHistory[]
-
-  @@index([phone])
-}
-
-model Passenger {
-  id                       String               @id @default(uuid()) @db.Uuid
-  firstName                String
-  lastName                 String
-  legalName                String?
-  email                    String?
-  phone                    String?
-  telegramChatId           String?
-  telegramUsername         String?
-  passengerType            PassengerType
-  isActive                 Boolean              @default(true)
-  linkedPrimaryPassengerId String?              @db.Uuid
-  notes                    String?
-  createdAt                DateTime             @default(now()) @db.Timestamptz(6)
-  updatedAt                DateTime             @updatedAt @db.Timestamptz(6)
-  auditPassengerActor      AuditLog[]           @relation("AuditActorPassenger")
-  bookingAllocations       BookingAllocation[]
-  itineraryPassengers      ItineraryPassenger[]
-  notificationRecipients   NotificationLog[]
-  linkedPrimaryPassenger   Passenger?           @relation("ExtraSeatLink", fields: [linkedPrimaryPassengerId], references: [id])
-  extraSeats               Passenger[]          @relation("ExtraSeatLink")
-  userLinks                PassengerUserLink[]
-
-  @@index([lastName, firstName])
-  @@index([isActive])
-  @@index([legalName])
-  @@index([phone])
-}
-
-model PassengerUserLink {
-  id          String    @id @default(uuid()) @db.Uuid
-  passengerId String    @db.Uuid
-  userId      String    @unique @db.Uuid
-  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
-  passenger   Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([passengerId, userId])
-}
-
-model Session {
-  id        String   @id @default(uuid())
-  token     String   @unique
-  userId    String   @db.Uuid
-  expiresAt DateTime @db.Timestamptz(6)
-  ipAddress String?
-  userAgent String?
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @db.Timestamptz(6)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-model Account {
-  id                    String    @id @default(uuid())
-  accountId             String
-  providerId            String
-  userId                String    @db.Uuid
-  accessToken           String?
-  refreshToken          String?
-  idToken               String?
-  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
-  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
-  scope                 String?
-  password              String?
-  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
-  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([providerId, accountId])
-  @@index([userId])
-}
-
-model Verification {
-  id         String   @id @default(uuid())
-  identifier String
-  value      String
-  expiresAt  DateTime @db.Timestamptz(6)
-  createdAt  DateTime @default(now()) @db.Timestamptz(6)
-  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
-
-  @@index([identifier])
-  @@index([value])
-}
-
-model Airport {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  code                  String                 @unique
-  name                  String
-  city                  String?
-  state                 String?
-  country               String?
-  timeZone              String
-  createdAt             DateTime               @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime               @updatedAt @db.Timestamptz(6)
-  adminAirports         AdminAirport[]
-  airportMandirMappings AirportMandirMapping[]
-  coordinatorAirports   CoordinatorAirport[]
-  driverAirports        DriverAirport[]
-  arrivalSegments       FlightSegment[]        @relation("SegmentArrivalAirport")
-  departureSegments     FlightSegment[]        @relation("SegmentDepartureAirport")
-  transportTasks        TransportTask[]
-}
-
-model Mandir {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  name                  String                 @unique
-  city                  String?
-  notes                 String?
-  createdAt             DateTime               @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime               @updatedAt @db.Timestamptz(6)
-  accommodations        Accommodation[]
-  adminMandirs          AdminMandir[]
-  airportMandirMappings AirportMandirMapping[]
-  coordinatorMandirs    CoordinatorMandir[]
-  transportTasks        TransportTask[]
-}
-
-model AirportMandirMapping {
-  id        String   @id @default(uuid()) @db.Uuid
-  airportId String   @db.Uuid
-  mandirId  String   @db.Uuid
-  isDefault Boolean  @default(false)
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  airport   Airport  @relation(fields: [airportId], references: [id], onDelete: Cascade)
-  mandir    Mandir   @relation(fields: [mandirId], references: [id], onDelete: Cascade)
-
-  @@unique([airportId, mandirId])
-  @@index([airportId])
-}
-
-model AdminAirport {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  airportId String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  airport   Airport  @relation(fields: [airportId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, airportId])
-}
-
-model AdminMandir {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  mandirId  String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  mandir    Mandir   @relation(fields: [mandirId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, mandirId])
-}
-
-model CoordinatorAirport {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  airportId String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  airport   Airport  @relation(fields: [airportId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, airportId])
-}
-
-model CoordinatorMandir {
-  id        String   @id @default(uuid()) @db.Uuid
-  userId    String   @db.Uuid
-  mandirId  String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  mandir    Mandir   @relation(fields: [mandirId], references: [id], onDelete: Cascade)
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, mandirId])
-}
-
-model Driver {
-  id                     String                       @id @default(uuid()) @db.Uuid
-  name                   String
-  phone                  String?
-  telegramChatId         String?                      @unique
-  telegramUsername       String?
-  isActive               Boolean                      @default(true)
-  notes                  String?
-  createdAt              DateTime                     @default(now()) @db.Timestamptz(6)
-  updatedAt              DateTime                     @updatedAt @db.Timestamptz(6)
-  auditDriverActor       AuditLog[]                   @relation("AuditActorDriver")
-  driverAirports         DriverAirport[]
-  notificationRecipients NotificationLog[]
-  transportTaskDrivers   TransportTaskDriver[]
-  locationPings          TransportTaskLocationPing[]
-  statusHistoryChanges   TransportTaskStatusHistory[]
-
-  @@index([isActive])
-  @@index([phone])
-}
-
-model DriverAirport {
-  id        String   @id @default(uuid()) @db.Uuid
-  driverId  String   @db.Uuid
-  airportId String   @db.Uuid
-  createdAt DateTime @default(now()) @db.Timestamptz(6)
-  airport   Airport  @relation(fields: [airportId], references: [id], onDelete: Cascade)
-  driver    Driver   @relation(fields: [driverId], references: [id], onDelete: Cascade)
-
-  @@unique([driverId, airportId])
-}
-
-model Itinerary {
-  id                    String               @id @default(uuid()) @db.Uuid
-  status                ItineraryStatus      @default(CREATED)
-  createdByUserId       String?              @db.Uuid
-  sourceSubmissionId    String?              @unique @db.Uuid
-  notes                 String?
-  createdAt             DateTime             @default(now()) @db.Timestamptz(6)
-  updatedAt             DateTime             @updatedAt @db.Timestamptz(6)
-  isArchived            Boolean              @default(false)
-  accommodations        Accommodation[]
-  approvalRequests      ApprovalRequest[]
-  booking               Booking?
-  duplicateFlags        DuplicateFlag[]      @relation("DuplicateFlagPrimaryItinerary")
-  relatedDuplicateFlags DuplicateFlag[]      @relation("DuplicateFlagRelatedItinerary")
-  externalSyncLinks     ExternalSyncLink[]
-  flightSegments        FlightSegment[]
-  createdByUser         User?                @relation("ItineraryCreatedBy", fields: [createdByUserId], references: [id])
-  sourceSubmission      PublicSubmission?    @relation(fields: [sourceSubmissionId], references: [id])
-  itineraryPassengers   ItineraryPassenger[]
-  transportTasks        TransportTask[]
-
-  @@index([status])
-  @@index([isArchived])
-  @@index([createdByUserId])
-}
-
-model ExternalSyncLink {
-  id              String             @id @default(uuid()) @db.Uuid
-  provider        String
-  externalKey     String
-  itineraryId     String             @db.Uuid
-  syncStatus      ExternalSyncStatus @default(IN_SYNC)
-  lastSeenAt      DateTime           @db.Timestamptz(6)
-  lastSyncedAt    DateTime           @db.Timestamptz(6)
-  lastPayloadHash String?
-  sourceMetadata  Json?
-  pendingRosterDiff Json?
-  lastReviewDiffAt  DateTime?        @db.Timestamptz(6)
-  createdAt       DateTime           @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime           @updatedAt @db.Timestamptz(6)
-  itinerary       Itinerary          @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, externalKey])
-  @@unique([provider, itineraryId])
-  @@index([provider, lastSeenAt])
-}
-
-model ItineraryPassenger {
-  id          String    @id @default(uuid()) @db.Uuid
-  itineraryId String    @db.Uuid
-  passengerId String    @db.Uuid
-  createdAt   DateTime  @default(now()) @db.Timestamptz(6)
-  itinerary   Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  passenger   Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
-
-  @@unique([itineraryId, passengerId])
-}
-
-model Booking {
-  id                 String              @id @default(uuid()) @db.Uuid
-  itineraryId        String              @unique @db.Uuid
-  confirmationNumber String?
-  totalCost          Decimal?            @db.Decimal(12, 2)
-  notes              String?
-  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
-  itinerary          Itinerary           @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  allocations        BookingAllocation[]
-
-  @@index([confirmationNumber])
-}
-
-model BookingAllocation {
-  id               String    @id @default(uuid()) @db.Uuid
-  bookingId        String    @db.Uuid
-  passengerId      String    @db.Uuid
-  allocatedCost    Decimal   @db.Decimal(12, 2)
-  isManualOverride Boolean   @default(false)
-  createdAt        DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime  @updatedAt @db.Timestamptz(6)
-  booking          Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-  passenger        Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
-
-  @@unique([bookingId, passengerId])
-}
-
-model FlightSegment {
-  id                 String          @id @default(uuid()) @db.Uuid
-  itineraryId        String          @db.Uuid
-  segmentOrder       Int
-  airline            String
-  flightNumber       String
-  departureAirportId String          @db.Uuid
-  arrivalAirportId   String          @db.Uuid
-  departureTimeZone  String
-  arrivalTimeZone    String
-  departureTimeLocal DateTime        @db.Timestamp(6)
-  arrivalTimeLocal   DateTime        @db.Timestamp(6)
-  departureTimeUtc   DateTime        @db.Timestamptz(6)
-  arrivalTimeUtc     DateTime        @db.Timestamptz(6)
-  notes              String?
-  createdAt          DateTime        @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime        @updatedAt @db.Timestamptz(6)
-  arrivalAirport     Airport         @relation("SegmentArrivalAirport", fields: [arrivalAirportId], references: [id])
-  departureAirport   Airport         @relation("SegmentDepartureAirport", fields: [departureAirportId], references: [id])
-  itinerary          Itinerary       @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  transportTasks     TransportTask[]
-
-  @@unique([itineraryId, segmentOrder])
-  @@index([flightNumber])
-  @@index([departureTimeLocal])
-  @@index([arrivalTimeLocal])
-}
-
-model Accommodation {
-  id           String    @id @default(uuid()) @db.Uuid
-  itineraryId  String    @db.Uuid
-  mandirId     String?   @db.Uuid
-  room         String?
-  checkInDate  DateTime? @db.Date
-  checkOutDate DateTime? @db.Date
-  notes        String?
-  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
-  updatedAt    DateTime  @updatedAt @db.Timestamptz(6)
-  itinerary    Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  mandir       Mandir?   @relation(fields: [mandirId], references: [id])
-}
-
-model TransportTask {
-  id                 String                       @id @default(uuid()) @db.Uuid
-  itineraryId        String                       @db.Uuid
-  flightSegmentId    String?                      @db.Uuid
-  taskType           TransportTaskType
-  airportId          String                       @db.Uuid
-  mandirId           String?                      @db.Uuid
-  scheduledTimeLocal DateTime?                    @db.Timestamp(6)
-  scheduledTimeUtc   DateTime?                    @db.Timestamptz(6)
-  status             TransportTaskStatus          @default(UNASSIGNED)
-  notes              String?
-  createdByUserId    String?                      @db.Uuid
-  createdAt          DateTime                     @default(now()) @db.Timestamptz(6)
-  updatedAt          DateTime                     @updatedAt @db.Timestamptz(6)
-  airport            Airport                      @relation(fields: [airportId], references: [id])
-  createdByUser      User?                        @relation("TransportTaskCreatedBy", fields: [createdByUserId], references: [id])
-  flightSegment      FlightSegment?               @relation(fields: [flightSegmentId], references: [id])
-  itinerary          Itinerary                    @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  mandir             Mandir?                      @relation(fields: [mandirId], references: [id])
-  drivers            TransportTaskDriver[]
-  liveLocationPings  TransportTaskLocationPing[]
-  statusHistory      TransportTaskStatusHistory[]
-
-  @@index([status])
-  @@index([scheduledTimeLocal])
-  @@index([airportId])
-}
-
-model TransportTaskDriver {
-  id               String        @id @default(uuid()) @db.Uuid
-  transportTaskId  String        @db.Uuid
-  driverId         String        @db.Uuid
-  assignedAt       DateTime      @default(now()) @db.Timestamptz(6)
-  assignedByUserId String?       @db.Uuid
-  assignedByUser   User?         @relation("TransportTaskAssignedBy", fields: [assignedByUserId], references: [id])
-  driver           Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  transportTask    TransportTask @relation(fields: [transportTaskId], references: [id], onDelete: Cascade)
-
-  @@unique([transportTaskId, driverId])
-}
-
-model TransportTaskStatusHistory {
-  id                String               @id @default(uuid()) @db.Uuid
-  transportTaskId   String               @db.Uuid
-  oldStatus         TransportTaskStatus?
-  newStatus         TransportTaskStatus
-  changedByUserId   String?              @db.Uuid
-  changedByDriverId String?              @db.Uuid
-  source            AuditSource
-  note              String?
-  createdAt         DateTime             @default(now()) @db.Timestamptz(6)
-  changedByDriver   Driver?              @relation(fields: [changedByDriverId], references: [id])
-  changedByUser     User?                @relation(fields: [changedByUserId], references: [id])
-  transportTask     TransportTask        @relation(fields: [transportTaskId], references: [id], onDelete: Cascade)
-
-  @@index([transportTaskId, createdAt])
-}
-
-model TransportTaskLocationPing {
-  id              String        @id @default(uuid()) @db.Uuid
-  transportTaskId String        @db.Uuid
-  driverId        String        @db.Uuid
-  latitude        Decimal       @db.Decimal(9, 6)
-  longitude       Decimal       @db.Decimal(9, 6)
-  recordedAt      DateTime      @default(now()) @db.Timestamptz(6)
-  driver          Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
-  transportTask   TransportTask @relation(fields: [transportTaskId], references: [id], onDelete: Cascade)
-
-  @@index([transportTaskId, recordedAt])
-}
-
-model ApprovalRequest {
-  id                String         @id @default(uuid()) @db.Uuid
-  itineraryId       String         @db.Uuid
-  requestedByUserId String         @db.Uuid
-  reviewedByUserId  String?        @db.Uuid
-  status            ApprovalStatus @default(PENDING)
-  entityType        String
-  entityId          String?        @db.Uuid
-  originalPayload   Json?
-  proposedPayload   Json
-  reviewComment     String?
-  requestedAt       DateTime       @default(now()) @db.Timestamptz(6)
-  reviewedAt        DateTime?      @db.Timestamptz(6)
-  itinerary         Itinerary      @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
-  requestedByUser   User           @relation("ApprovalRequestedBy", fields: [requestedByUserId], references: [id])
-  reviewedByUser    User?          @relation("ApprovalReviewedBy", fields: [reviewedByUserId], references: [id])
-
-  @@index([status])
-  @@index([itineraryId])
-}
-
-model PublicSubmission {
-  id                String           @id @default(uuid()) @db.Uuid
-  status            SubmissionStatus @default(PENDING)
-  rawPayload        Json
-  normalizedPayload Json?
-  notes             String?
-  reviewedByUserId  String?          @db.Uuid
-  reviewedAt        DateTime?        @db.Timestamptz(6)
-  createdAt         DateTime         @default(now()) @db.Timestamptz(6)
-  duplicateFlags    DuplicateFlag[]
-  itinerary         Itinerary?
-  reviewedByUser    User?            @relation(fields: [reviewedByUserId], references: [id])
-
-  @@index([status])
-}
-
-model DuplicateFlag {
-  id                 String            @id @default(uuid()) @db.Uuid
-  itineraryId        String?           @db.Uuid
-  publicSubmissionId String?           @db.Uuid
-  relatedItineraryId String?           @db.Uuid
-  rule               DuplicateRule
-  details            Json?
-  resolvedByUserId   String?           @db.Uuid
-  resolvedAt         DateTime?         @db.Timestamptz(6)
-  resolutionNote     String?
-  createdAt          DateTime          @default(now()) @db.Timestamptz(6)
-  itinerary          Itinerary?        @relation("DuplicateFlagPrimaryItinerary", fields: [itineraryId], references: [id], onDelete: Cascade)
-  publicSubmission   PublicSubmission? @relation(fields: [publicSubmissionId], references: [id], onDelete: Cascade)
-  relatedItinerary   Itinerary?        @relation("DuplicateFlagRelatedItinerary", fields: [relatedItineraryId], references: [id])
-  resolvedByUser     User?             @relation(fields: [resolvedByUserId], references: [id])
-
-  @@index([createdAt])
-}
-
-model NotificationLog {
-  id                   String              @id @default(uuid()) @db.Uuid
-  notificationType     NotificationType
-  recipientUserId      String?             @db.Uuid
-  recipientPassengerId String?             @db.Uuid
-  recipientDriverId    String?             @db.Uuid
-  recipientChatId      String?
-  payload              Json
-  status               NotificationStatus  @default(QUEUED)
-  attemptCount         Int                 @default(0)
-  lastError            String?
-  sentAt               DateTime?           @db.Timestamptz(6)
-  createdAt            DateTime            @default(now()) @db.Timestamptz(6)
-  dedupeKey            String?             @unique
-  deliveryChannel      NotificationChannel @default(TELEGRAM)
-  providerMessageId    String?
-  providerName         String?
-  recipientPhone       String?
-  recipientDriver      Driver?             @relation(fields: [recipientDriverId], references: [id])
-  recipientPassenger   Passenger?          @relation(fields: [recipientPassengerId], references: [id])
-  recipientUser        User?               @relation(fields: [recipientUserId], references: [id])
-
-  @@index([status])
-  @@index([deliveryChannel, status])
-  @@index([createdAt])
-}
-
-model ReminderRule {
-  id              String           @id @default(uuid()) @db.Uuid
-  name            String
-  isActive        Boolean          @default(true)
-  trigger         ReminderTrigger
-  audience        ReminderAudience
-  channel         ReminderChannel
-  offsetMinutes   Int              @default(0)
-  template        String
-  createdByUserId String           @db.Uuid
-  lastRunAt       DateTime?        @db.Timestamptz(6)
-  lastError       String?
-  createdAt       DateTime         @default(now()) @db.Timestamptz(6)
-  updatedAt       DateTime         @updatedAt @db.Timestamptz(6)
-  createdByUser   User             @relation(fields: [createdByUserId], references: [id])
-  runs            ReminderRun[]
-
-  @@index([isActive, trigger])
-}
-
-model ReminderRun {
-  id                String            @id @default(uuid()) @db.Uuid
-  reminderRuleId    String            @db.Uuid
-  entityType        String
-  entityId          String
-  recipientChatId   String?
-  notificationLogId String?           @unique @db.Uuid
-  scheduledFor      DateTime          @db.Timestamptz(6)
-  status            ReminderRunStatus @default(QUEUED)
-  errorMessage      String?
-  createdAt         DateTime          @default(now()) @db.Timestamptz(6)
-  updatedAt         DateTime          @updatedAt @db.Timestamptz(6)
-  reminderRule      ReminderRule      @relation(fields: [reminderRuleId], references: [id], onDelete: Cascade)
-
-  @@unique([reminderRuleId, entityType, entityId, scheduledFor])
-  @@index([status, scheduledFor])
-}
-
-model AuditLog {
-  id               String      @id @default(uuid()) @db.Uuid
-  actorUserId      String?     @db.Uuid
-  actorDriverId    String?     @db.Uuid
-  actorPassengerId String?     @db.Uuid
-  action           String
-  entityType       String
-  entityId         String?     @db.Uuid
-  oldValues        Json?
-  newValues        Json?
-  source           AuditSource
-  ipAddress        String?
-  deviceInfo       String?
-  createdAt        DateTime    @default(now()) @db.Timestamptz(6)
-  actorDriver      Driver?     @relation("AuditActorDriver", fields: [actorDriverId], references: [id])
-  actorPassenger   Passenger?  @relation("AuditActorPassenger", fields: [actorPassengerId], references: [id])
-  actorUser        User?       @relation("AuditActorUser", fields: [actorUserId], references: [id])
-
-  @@index([entityType, entityId])
-  @@index([createdAt])
-}
-
-model CsvImportJob {
-  id               String          @id @default(uuid()) @db.Uuid
-  importType       String
-  uploadedByUserId String          @db.Uuid
-  originalFilename String
-  status           CsvImportStatus
-  summary          Json?
-  errorReport      Json?
-  createdAt        DateTime        @default(now()) @db.Timestamptz(6)
-  updatedAt        DateTime        @updatedAt @db.Timestamptz(6)
-  uploadedByUser   User            @relation(fields: [uploadedByUserId], references: [id])
-}
-
-model AiQueryLog {
-  id              String   @id @default(uuid()) @db.Uuid
-  userId          String   @db.Uuid
-  roleSnapshot    UserRole
-  queryText       String
-  responseSummary String?
-  createdAt       DateTime @default(now()) @db.Timestamptz(6)
-  user            User     @relation(fields: [userId], references: [id])
-
-  @@index([createdAt])
-}
-
 enum UserRole {
   ADMIN
   COORDINATOR
@@ -723,8 +104,8 @@ enum ReminderAudience {
 
 enum ReminderChannel {
   TELEGRAM
-  INTERNAL
   SMS
+  INTERNAL
 }
 
 enum NotificationChannel {
@@ -750,4 +131,657 @@ enum CsvImportStatus {
   VALIDATED
   FAILED
   COMMITTED
+}
+
+model User {
+  id               String   @id @default(uuid()) @db.Uuid
+  email            String   @unique
+  name             String?
+  emailVerified    Boolean  @default(false)
+  image            String?
+  phone            String?
+  firstName        String   @default("")
+  lastName         String   @default("")
+  role             UserRole @default(PASSENGER)
+  isActive         Boolean  @default(true)
+  accessProvisionedAt DateTime @default(now()) @db.Timestamptz(6)
+  identityProvider String?
+  identitySubject  String?
+  identityLinkedAt DateTime? @db.Timestamptz(6)
+  lastLoginAt      DateTime? @db.Timestamptz(6)
+  telegramChatId   String?  @unique
+  telegramUsername String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  createdItineraries     Itinerary[]           @relation("ItineraryCreatedBy")
+  adminAirports          AdminAirport[]
+  adminMandirs           AdminMandir[]
+  coordinatorAirports    CoordinatorAirport[]
+  coordinatorMandirs     CoordinatorMandir[]
+  passengerUserLinks     PassengerUserLink[]
+  createdTransportTasks  TransportTask[]       @relation("TransportTaskCreatedBy")
+  assignedTransportTasks TransportTaskDriver[] @relation("TransportTaskAssignedBy")
+  transportStatusChanges TransportTaskStatusHistory[]
+  approvalRequestsMade   ApprovalRequest[]     @relation("ApprovalRequestedBy")
+  approvalRequestsReviewed ApprovalRequest[]   @relation("ApprovalReviewedBy")
+  reviewedPublicSubmissions PublicSubmission[]
+  resolvedDuplicateFlags DuplicateFlag[]
+  notificationUserRecipients NotificationLog[]
+  auditUserActor         AuditLog[]            @relation("AuditActorUser")
+  csvImportJobs          CsvImportJob[]
+  aiQueryLogs            AiQueryLog[]
+  createdReminderRules   ReminderRule[]
+  accounts              Account[]
+  sessions              Session[]
+
+  @@index([phone])
+}
+
+model Passenger {
+  id                     String   @id @default(uuid()) @db.Uuid
+  firstName              String
+  lastName               String
+  legalName              String?
+  email                  String?
+  phone                  String?
+  telegramChatId         String?
+  telegramUsername       String?
+  passengerType          PassengerType
+  isActive               Boolean  @default(true)
+  linkedPrimaryPassengerId String? @db.Uuid
+  notes                  String?
+  createdAt              DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime @updatedAt @db.Timestamptz(6)
+
+  linkedPrimaryPassenger Passenger? @relation("ExtraSeatLink", fields: [linkedPrimaryPassengerId], references: [id])
+  extraSeats             Passenger[] @relation("ExtraSeatLink")
+  userLinks              PassengerUserLink[]
+  itineraryPassengers    ItineraryPassenger[]
+  bookingAllocations     BookingAllocation[]
+  notificationRecipients NotificationLog[]
+  auditPassengerActor    AuditLog[] @relation("AuditActorPassenger")
+
+  @@index([lastName, firstName])
+  @@index([isActive])
+  @@index([legalName])
+  @@index([phone])
+}
+
+model PassengerUserLink {
+  id          String   @id @default(uuid()) @db.Uuid
+  passengerId String   @db.Uuid
+  userId      String   @unique @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  passenger Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([passengerId, userId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String   @db.Uuid
+  expiresAt DateTime @db.Timestamptz(6)
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+}
+
+model Verification {
+  id         String   @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@index([value])
+}
+
+model Airport {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique
+  name      String
+  city      String?
+  state     String?
+  country   String?
+  timeZone  String
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  departureSegments      FlightSegment[]       @relation("SegmentDepartureAirport")
+  arrivalSegments        FlightSegment[]       @relation("SegmentArrivalAirport")
+  airportMandirMappings  AirportMandirMapping[]
+  adminAirports          AdminAirport[]
+  coordinatorAirports    CoordinatorAirport[]
+  driverAirports         DriverAirport[]
+  transportTasks         TransportTask[]
+}
+
+model Mandir {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  city      String?
+  notes     String?
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  airportMandirMappings AirportMandirMapping[]
+  adminMandirs          AdminMandir[]
+  coordinatorMandirs    CoordinatorMandir[]
+  accommodations        Accommodation[]
+  transportTasks        TransportTask[]
+}
+
+model AirportMandirMapping {
+  id        String   @id @default(uuid()) @db.Uuid
+  airportId String   @db.Uuid
+  mandirId  String   @db.Uuid
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  airport Airport @relation(fields: [airportId], references: [id], onDelete: Cascade)
+  mandir  Mandir  @relation(fields: [mandirId], references: [id], onDelete: Cascade)
+
+  @@unique([airportId, mandirId])
+  @@index([airportId])
+}
+
+model AdminAirport {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  airportId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  airport Airport @relation(fields: [airportId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, airportId])
+}
+
+model AdminMandir {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  mandirId  String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mandir Mandir @relation(fields: [mandirId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mandirId])
+}
+
+model CoordinatorAirport {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  airportId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  airport Airport @relation(fields: [airportId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, airportId])
+}
+
+model CoordinatorMandir {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  mandirId  String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mandir Mandir @relation(fields: [mandirId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, mandirId])
+}
+
+model Driver {
+  id               String   @id @default(uuid()) @db.Uuid
+  name             String
+  phone            String?
+  telegramChatId   String?  @unique
+  telegramUsername String?
+  isActive         Boolean  @default(true)
+  notes            String?
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  driverAirports         DriverAirport[]
+  transportTaskDrivers   TransportTaskDriver[]
+  statusHistoryChanges   TransportTaskStatusHistory[]
+  locationPings          TransportTaskLocationPing[]
+  notificationRecipients NotificationLog[]
+  auditDriverActor       AuditLog[] @relation("AuditActorDriver")
+
+  @@index([isActive])
+  @@index([phone])
+}
+
+model DriverAirport {
+  id        String   @id @default(uuid()) @db.Uuid
+  driverId  String   @db.Uuid
+  airportId String   @db.Uuid
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  airport Airport @relation(fields: [airportId], references: [id], onDelete: Cascade)
+
+  @@unique([driverId, airportId])
+}
+
+model Itinerary {
+  id                 String          @id @default(uuid()) @db.Uuid
+  status             ItineraryStatus @default(CREATED)
+  isArchived         Boolean         @default(false)
+  createdByUserId    String?         @db.Uuid
+  sourceSubmissionId String?         @unique @db.Uuid
+  notes              String?
+  createdAt          DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @db.Timestamptz(6)
+
+  createdByUser    User?                @relation("ItineraryCreatedBy", fields: [createdByUserId], references: [id])
+  sourceSubmission PublicSubmission?    @relation(fields: [sourceSubmissionId], references: [id])
+  itineraryPassengers ItineraryPassenger[]
+  booking          Booking?
+  flightSegments   FlightSegment[]
+  accommodations   Accommodation[]
+  transportTasks   TransportTask[]
+  externalSyncLinks ExternalSyncLink[]
+  approvalRequests ApprovalRequest[]
+  duplicateFlags   DuplicateFlag[]      @relation("DuplicateFlagPrimaryItinerary")
+  relatedDuplicateFlags DuplicateFlag[]  @relation("DuplicateFlagRelatedItinerary")
+
+  @@index([status])
+  @@index([isArchived])
+  @@index([createdByUserId])
+}
+
+model ExternalSyncLink {
+  id               String             @id @default(uuid()) @db.Uuid
+  provider         String
+  externalKey      String
+  itineraryId      String             @db.Uuid
+  syncStatus       ExternalSyncStatus @default(IN_SYNC)
+  lastSeenAt       DateTime           @db.Timestamptz(6)
+  lastSyncedAt     DateTime           @db.Timestamptz(6)
+  lastPayloadHash  String?
+  sourceMetadata   Json?
+  pendingRosterDiff Json?
+  lastReviewDiffAt DateTime?          @db.Timestamptz(6)
+  createdAt        DateTime           @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime           @updatedAt @db.Timestamptz(6)
+
+  itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, externalKey])
+  @@unique([provider, itineraryId])
+  @@index([provider, lastSeenAt])
+}
+
+model ItineraryPassenger {
+  id          String   @id @default(uuid()) @db.Uuid
+  itineraryId String   @db.Uuid
+  passengerId String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+
+  itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  passenger Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+
+  @@unique([itineraryId, passengerId])
+}
+
+model Booking {
+  id                 String   @id @default(uuid()) @db.Uuid
+  itineraryId        String   @unique @db.Uuid
+  confirmationNumber String?
+  totalCost          Decimal? @db.Decimal(12, 2)
+  notes              String?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  itinerary   Itinerary           @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  allocations BookingAllocation[]
+
+  @@index([confirmationNumber])
+}
+
+model BookingAllocation {
+  id               String   @id @default(uuid()) @db.Uuid
+  bookingId        String   @db.Uuid
+  passengerId      String   @db.Uuid
+  allocatedCost    Decimal  @db.Decimal(12, 2)
+  isManualOverride Boolean  @default(false)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, passengerId])
+}
+
+model FlightSegment {
+  id                 String   @id @default(uuid()) @db.Uuid
+  itineraryId        String   @db.Uuid
+  segmentOrder       Int
+  airline            String
+  flightNumber       String
+  departureAirportId String   @db.Uuid
+  arrivalAirportId   String   @db.Uuid
+  departureTimeZone  String
+  arrivalTimeZone    String
+  departureTimeLocal DateTime @db.Timestamp(6)
+  arrivalTimeLocal   DateTime @db.Timestamp(6)
+  departureTimeUtc   DateTime @db.Timestamptz(6)
+  arrivalTimeUtc     DateTime @db.Timestamptz(6)
+  notes              String?
+  createdAt          DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime @updatedAt @db.Timestamptz(6)
+
+  itinerary        Itinerary       @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  departureAirport Airport         @relation("SegmentDepartureAirport", fields: [departureAirportId], references: [id])
+  arrivalAirport   Airport         @relation("SegmentArrivalAirport", fields: [arrivalAirportId], references: [id])
+  transportTasks   TransportTask[]
+
+  @@unique([itineraryId, segmentOrder])
+  @@index([flightNumber])
+  @@index([departureTimeLocal])
+  @@index([arrivalTimeLocal])
+}
+
+model Accommodation {
+  id           String   @id @default(uuid()) @db.Uuid
+  itineraryId  String   @db.Uuid
+  mandirId     String?  @db.Uuid
+  room         String?
+  checkInDate  DateTime? @db.Date
+  checkOutDate DateTime? @db.Date
+  notes        String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
+
+  itinerary Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  mandir    Mandir?   @relation(fields: [mandirId], references: [id])
+}
+
+model TransportTask {
+  id                 String              @id @default(uuid()) @db.Uuid
+  itineraryId        String              @db.Uuid
+  flightSegmentId    String?             @db.Uuid
+  taskType           TransportTaskType
+  airportId          String              @db.Uuid
+  mandirId           String?             @db.Uuid
+  scheduledTimeLocal DateTime?           @db.Timestamp(6)
+  scheduledTimeUtc   DateTime?           @db.Timestamptz(6)
+  status             TransportTaskStatus @default(UNASSIGNED)
+  notes              String?
+  createdByUserId    String?             @db.Uuid
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
+
+  itinerary     Itinerary                  @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  flightSegment FlightSegment?             @relation(fields: [flightSegmentId], references: [id], onDelete: SetNull)
+  airport       Airport                    @relation(fields: [airportId], references: [id])
+  mandir        Mandir?                    @relation(fields: [mandirId], references: [id])
+  createdByUser User?                      @relation("TransportTaskCreatedBy", fields: [createdByUserId], references: [id])
+  drivers       TransportTaskDriver[]
+  statusHistory TransportTaskStatusHistory[]
+  liveLocationPings TransportTaskLocationPing[]
+
+  @@index([status])
+  @@index([scheduledTimeLocal])
+  @@index([airportId])
+}
+
+model TransportTaskDriver {
+  id               String   @id @default(uuid()) @db.Uuid
+  transportTaskId  String   @db.Uuid
+  driverId         String   @db.Uuid
+  assignedAt       DateTime @default(now()) @db.Timestamptz(6)
+  assignedByUserId String?  @db.Uuid
+
+  transportTask  TransportTask @relation(fields: [transportTaskId], references: [id], onDelete: Cascade)
+  driver         Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  assignedByUser User?         @relation("TransportTaskAssignedBy", fields: [assignedByUserId], references: [id])
+
+  @@unique([transportTaskId, driverId])
+}
+
+model TransportTaskStatusHistory {
+  id                String              @id @default(uuid()) @db.Uuid
+  transportTaskId   String              @db.Uuid
+  oldStatus         TransportTaskStatus?
+  newStatus         TransportTaskStatus
+  changedByUserId   String?             @db.Uuid
+  changedByDriverId String?             @db.Uuid
+  source            AuditSource
+  note              String?
+  createdAt         DateTime            @default(now()) @db.Timestamptz(6)
+
+  transportTask   TransportTask @relation(fields: [transportTaskId], references: [id], onDelete: Cascade)
+  changedByUser   User?         @relation(fields: [changedByUserId], references: [id])
+  changedByDriver Driver?       @relation(fields: [changedByDriverId], references: [id])
+
+  @@index([transportTaskId, createdAt])
+}
+
+model TransportTaskLocationPing {
+  id              String   @id @default(uuid()) @db.Uuid
+  transportTaskId String   @db.Uuid
+  driverId        String   @db.Uuid
+  latitude        Decimal  @db.Decimal(9, 6)
+  longitude       Decimal  @db.Decimal(9, 6)
+  recordedAt      DateTime @default(now()) @db.Timestamptz(6)
+
+  transportTask TransportTask @relation(fields: [transportTaskId], references: [id], onDelete: Cascade)
+  driver        Driver        @relation(fields: [driverId], references: [id], onDelete: Cascade)
+
+  @@index([transportTaskId, recordedAt])
+}
+
+model ApprovalRequest {
+  id                String         @id @default(uuid()) @db.Uuid
+  itineraryId       String         @db.Uuid
+  requestedByUserId String         @db.Uuid
+  reviewedByUserId  String?        @db.Uuid
+  status            ApprovalStatus @default(PENDING)
+  entityType        String
+  entityId          String?        @db.Uuid
+  originalPayload   Json?
+  proposedPayload   Json
+  reviewComment     String?
+  requestedAt       DateTime       @default(now()) @db.Timestamptz(6)
+  reviewedAt        DateTime?      @db.Timestamptz(6)
+
+  itinerary       Itinerary @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  requestedByUser User      @relation("ApprovalRequestedBy", fields: [requestedByUserId], references: [id])
+  reviewedByUser  User?     @relation("ApprovalReviewedBy", fields: [reviewedByUserId], references: [id])
+
+  @@index([status])
+  @@index([itineraryId])
+}
+
+model PublicSubmission {
+  id                String           @id @default(uuid()) @db.Uuid
+  status            SubmissionStatus @default(PENDING)
+  rawPayload        Json
+  normalizedPayload Json?
+  notes             String?
+  reviewedByUserId  String?          @db.Uuid
+  reviewedAt        DateTime?        @db.Timestamptz(6)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(6)
+
+  reviewedByUser User?      @relation(fields: [reviewedByUserId], references: [id])
+  itinerary      Itinerary?
+  duplicateFlags DuplicateFlag[]
+
+  @@index([status])
+}
+
+model DuplicateFlag {
+  id                String         @id @default(uuid()) @db.Uuid
+  itineraryId       String?        @db.Uuid
+  publicSubmissionId String?       @db.Uuid
+  relatedItineraryId String?       @db.Uuid
+  rule              DuplicateRule
+  details           Json?
+  resolvedByUserId  String?        @db.Uuid
+  resolvedAt        DateTime?      @db.Timestamptz(6)
+  resolutionNote    String?
+  createdAt         DateTime       @default(now()) @db.Timestamptz(6)
+
+  itinerary        Itinerary?       @relation("DuplicateFlagPrimaryItinerary", fields: [itineraryId], references: [id], onDelete: Cascade)
+  publicSubmission PublicSubmission? @relation(fields: [publicSubmissionId], references: [id], onDelete: Cascade)
+  relatedItinerary Itinerary?       @relation("DuplicateFlagRelatedItinerary", fields: [relatedItineraryId], references: [id], onDelete: SetNull)
+  resolvedByUser   User?            @relation(fields: [resolvedByUserId], references: [id])
+
+  @@index([createdAt])
+}
+
+model NotificationLog {
+  id                   String             @id @default(uuid()) @db.Uuid
+  notificationType     NotificationType
+  deliveryChannel      NotificationChannel @default(TELEGRAM)
+  recipientUserId      String?            @db.Uuid
+  recipientPassengerId String?            @db.Uuid
+  recipientDriverId    String?            @db.Uuid
+  recipientChatId      String?
+  recipientPhone       String?
+  providerName         String?
+  providerMessageId    String?
+  dedupeKey            String?            @unique
+  payload              Json
+  status               NotificationStatus @default(QUEUED)
+  attemptCount         Int                @default(0)
+  lastError            String?
+  sentAt               DateTime?          @db.Timestamptz(6)
+  createdAt            DateTime           @default(now()) @db.Timestamptz(6)
+
+  recipientUser      User?      @relation(fields: [recipientUserId], references: [id])
+  recipientPassenger Passenger? @relation(fields: [recipientPassengerId], references: [id])
+  recipientDriver    Driver?    @relation(fields: [recipientDriverId], references: [id])
+
+  @@index([status])
+  @@index([deliveryChannel, status])
+  @@index([createdAt])
+}
+
+model ReminderRule {
+  id             String           @id @default(uuid()) @db.Uuid
+  name           String
+  isActive       Boolean          @default(true)
+  trigger        ReminderTrigger
+  audience       ReminderAudience
+  channel        ReminderChannel
+  offsetMinutes  Int              @default(0)
+  template       String
+  createdByUserId String          @db.Uuid
+  lastRunAt      DateTime?        @db.Timestamptz(6)
+  lastError      String?
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(6)
+
+  createdByUser  User             @relation(fields: [createdByUserId], references: [id])
+  runs           ReminderRun[]
+
+  @@index([isActive, trigger])
+}
+
+model ReminderRun {
+  id               String            @id @default(uuid()) @db.Uuid
+  reminderRuleId   String            @db.Uuid
+  entityType       String
+  entityId         String
+  recipientChatId  String?
+  notificationLogId String?         @unique @db.Uuid
+  scheduledFor     DateTime          @db.Timestamptz(6)
+  status           ReminderRunStatus @default(QUEUED)
+  errorMessage     String?
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(6)
+
+  reminderRule     ReminderRule      @relation(fields: [reminderRuleId], references: [id], onDelete: Cascade)
+
+  @@unique([reminderRuleId, entityType, entityId, scheduledFor])
+  @@index([status, scheduledFor])
+}
+
+model AuditLog {
+  id                String      @id @default(uuid()) @db.Uuid
+  actorUserId       String?     @db.Uuid
+  actorDriverId     String?     @db.Uuid
+  actorPassengerId  String?     @db.Uuid
+  action            String
+  entityType        String
+  entityId          String?     @db.Uuid
+  oldValues         Json?
+  newValues         Json?
+  source            AuditSource
+  ipAddress         String?
+  deviceInfo        String?
+  createdAt         DateTime    @default(now()) @db.Timestamptz(6)
+
+  actorUser      User?      @relation("AuditActorUser", fields: [actorUserId], references: [id])
+  actorDriver    Driver?    @relation("AuditActorDriver", fields: [actorDriverId], references: [id])
+  actorPassenger Passenger? @relation("AuditActorPassenger", fields: [actorPassengerId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+model CsvImportJob {
+  id               String          @id @default(uuid()) @db.Uuid
+  importType       String
+  uploadedByUserId String          @db.Uuid
+  originalFilename String
+  status           CsvImportStatus
+  summary          Json?
+  errorReport      Json?
+  createdAt        DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime        @updatedAt @db.Timestamptz(6)
+
+  uploadedByUser User @relation(fields: [uploadedByUserId], references: [id])
+}
+
+model AiQueryLog {
+  id              String   @id @default(uuid()) @db.Uuid
+  userId          String   @db.Uuid
+  roleSnapshot    UserRole
+  queryText       String
+  responseSummary String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([createdAt])
 }

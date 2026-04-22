@@ -2,7 +2,6 @@ import { getItineraryDetail, listAirports, listDrivers, listPassengers, listUser
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
-import { GoogleSheetsSyncReviewPanel } from "@/components/google-sheets-sync-review-panel";
 import { ItineraryLifecycleActions } from "@/components/itinerary-lifecycle-actions";
 import { PageHeader } from "@/components/page-header";
 import { TripBuilder } from "@/components/trip-builder";
@@ -38,12 +37,6 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
     redirect("/itineraries");
   }
 
-  const googleSheetsSyncLink = itinerary.externalSyncLinks.find((link) => link.provider === "google-sheets");
-  const pendingRosterDiff =
-    googleSheetsSyncLink?.syncStatus === "REVIEW_REQUIRED" && googleSheetsSyncLink.pendingRosterDiff && typeof googleSheetsSyncLink.pendingRosterDiff === "object"
-      ? googleSheetsSyncLink.pendingRosterDiff
-      : null;
-
   return (
     <AppShell currentUser={currentUser}>
       <PageHeader
@@ -57,7 +50,6 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
           />
         }
       />
-      {pendingRosterDiff ? <GoogleSheetsSyncReviewPanel itineraryId={itinerary.id} pendingRosterDiff={pendingRosterDiff as Record<string, unknown>} /> : null}
       <TripBuilder
         drivers={drivers.map((driver) => ({
           id: driver.id,

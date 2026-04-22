@@ -625,14 +625,14 @@ export async function getDashboardSnapshot(input?: {
       prisma.transportTask.findMany({
         where: input?.airportIds?.length
           ? {
-            airportId: {
-              in: input.airportIds,
-            },
-            itinerary: { isArchived: false },
-          }
+              airportId: {
+                in: input.airportIds,
+              },
+              itinerary: { isArchived: false },
+            }
           : {
-            itinerary: { isArchived: false },
-          },
+              itinerary: { isArchived: false },
+            },
         take: 5,
         orderBy: { scheduledTimeLocal: "asc" },
         include: {
@@ -682,12 +682,12 @@ export async function listPassengers(search?: string, options?: { includeInactiv
       ...(options?.includeInactive ? {} : { isActive: true }),
       ...(search
         ? {
-          OR: [
-            { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          ],
-        }
+            OR: [
+              { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            ],
+          }
         : {}),
     },
     include: {
@@ -741,12 +741,12 @@ export async function listUsers(search?: string, options?: { includeInactive?: b
       ...(options?.includeInactive ? {} : { isActive: true }),
       ...(search
         ? {
-          OR: [
-            { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-            { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          ],
-        }
+            OR: [
+              { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            ],
+          }
         : {}),
     },
     include: {
@@ -1262,9 +1262,9 @@ async function syncTripRelations(tx: Prisma.TransactionClient, itineraryId: stri
 
   const hasBooking = Boolean(
     input.booking &&
-    ((input.booking.confirmationNumber ?? "").trim() ||
-      input.booking.totalCost === 0 ||
-      (input.booking.totalCost !== null && input.booking.totalCost !== undefined)),
+      ((input.booking.confirmationNumber ?? "").trim() ||
+        input.booking.totalCost === 0 ||
+        (input.booking.totalCost !== null && input.booking.totalCost !== undefined)),
   );
 
   if (hasBooking && input.booking) {
@@ -1601,12 +1601,12 @@ export async function listAirportOptions(search?: string) {
   const airports = await prisma.airport.findMany({
     where: search
       ? {
-        OR: [
-          { code: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          { name: { contains: search, mode: Prisma.QueryMode.insensitive } },
-          { city: { contains: search, mode: Prisma.QueryMode.insensitive } },
-        ],
-      }
+          OR: [
+            { code: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { name: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            { city: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          ],
+        }
       : undefined,
     orderBy: { code: "asc" },
     take: 20,
@@ -2665,12 +2665,12 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
             lastSyncedAt: syncedAt,
             ...(wasArchived
               ? {
-                syncStatus: ExternalSyncStatus.IN_SYNC,
-                lastPayloadHash: payloadHash,
-                sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, trip),
-                pendingRosterDiff: Prisma.JsonNull,
-                lastReviewDiffAt: null,
-              }
+                  syncStatus: ExternalSyncStatus.IN_SYNC,
+                  lastPayloadHash: payloadHash,
+                  sourceMetadata: buildGoogleSheetsSourceMetadata(input.sheetName, trip),
+                  pendingRosterDiff: Prisma.JsonNull,
+                  lastReviewDiffAt: null,
+                }
               : {}),
           },
         });
@@ -3523,32 +3523,32 @@ async function createPassengerFromTraveler(
   tx: Prisma.TransactionClient,
   input:
     | {
-      sourceType: "USER";
-      user: {
-        id: string;
-        firstName: string;
-        lastName: string;
-        email: string;
-        phone?: string | null;
-      };
-      actorUserId?: string | null;
-    }
+        sourceType: "USER";
+        user: {
+          id: string;
+          firstName: string;
+          lastName: string;
+          email: string;
+          phone?: string | null;
+        };
+        actorUserId?: string | null;
+      }
     | {
-      sourceType: "DRIVER";
-      driver: {
-        id: string;
-        name: string;
-        phone?: string | null;
-      };
-      actorUserId?: string | null;
-    },
+        sourceType: "DRIVER";
+        driver: {
+          id: string;
+          name: string;
+          phone?: string | null;
+        };
+        actorUserId?: string | null;
+      },
 ) {
   const parsedName =
     input.sourceType === "USER"
       ? {
-        firstName: input.user.firstName.trim() || "Traveler",
-        lastName: input.user.lastName.trim() || "Passenger",
-      }
+          firstName: input.user.firstName.trim() || "Traveler",
+          lastName: input.user.lastName.trim() || "Passenger",
+        }
       : parseDisplayName(input.driver.name);
 
   const passenger = await tx.passenger.create({
@@ -3601,13 +3601,12 @@ async function resolveTravelerRefsToPassengerIds(
         include: {
           passengerUserLinks: {
             include: { passenger: true },
+            take: 1,
           },
         },
-
       });
 
-      let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> = user.passengerUserLinks?.passenger ?? null;
-
+      let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> = user.passengerUserLinks[0]?.passenger ?? null;
       let mode = "linked";
 
       if (!passenger) {
@@ -3732,13 +3731,13 @@ export async function linkTelegramAccount(chatId: string, rawInput: string, tele
     }),
     normalizedPhone
       ? prisma.passenger.findMany({
-        where: { phone: normalizedPhone },
-      })
+          where: { phone: normalizedPhone },
+        })
       : Promise.resolve([]),
     normalizedPhone
       ? prisma.driver.findMany({
-        where: { phone: normalizedPhone },
-      })
+          where: { phone: normalizedPhone },
+        })
       : Promise.resolve([]),
   ]);
 
@@ -4078,29 +4077,29 @@ async function listScopedUsersForAirports(
   return tx.user.findMany({
     where: role === UserRole.ADMIN
       ? {
-        role: UserRole.ADMIN,
-        isActive: true,
-        telegramChatId: { not: null },
-        adminAirports: {
-          some: {
-            airportId: {
-              in: airportIds,
+          role: UserRole.ADMIN,
+          isActive: true,
+          telegramChatId: { not: null },
+          adminAirports: {
+            some: {
+              airportId: {
+                in: airportIds,
+              },
             },
           },
-        },
-      }
+        }
       : {
-        role: UserRole.COORDINATOR,
-        isActive: true,
-        telegramChatId: { not: null },
-        coordinatorAirports: {
-          some: {
-            airportId: {
-              in: airportIds,
+          role: UserRole.COORDINATOR,
+          isActive: true,
+          telegramChatId: { not: null },
+          coordinatorAirports: {
+            some: {
+              airportId: {
+                in: airportIds,
+              },
             },
           },
         },
-      },
     include: {
       adminAirports: { include: { airport: true } },
       coordinatorAirports: { include: { airport: true } },
@@ -4142,11 +4141,11 @@ function buildTransportSummaryText(input: {
   const scheduled =
     input.scheduledTime
       ? new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-      }).format(input.scheduledTime)
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }).format(input.scheduledTime)
       : "Not scheduled";
 
   return [
@@ -4889,126 +4888,5 @@ export async function markNotificationFailed(id: string, errorMessage: string, p
         errorMessage,
       },
     });
-  });
-}
-
-export async function listUpcomingFlightSegments(limit = 30) {
-  return prisma.flightSegment.findMany({
-    where: {
-      itinerary: { isArchived: false },
-      // Temporarily show flights from the last 24 hours to debug timezone issues
-      departureTimeUtc: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-    },
-    orderBy: { departureTimeUtc: "asc" },
-    take: limit,
-    include: {
-      departureAirport: true,
-      arrivalAirport: true,
-      itinerary: {
-        include: {
-          itineraryPassengers: { include: { passenger: true } },
-        },
-      },
-    },
-  });
-}
-
-export async function queueOneOffFlightReminder(input: {
-  flightSegmentId: string;
-  channel: "TELEGRAM" | "SMS" | "TELEGRAM_SMS";
-  message?: string | null;
-}) {
-  return prisma.$transaction(async (tx) => {
-    const segment = await tx.flightSegment.findUnique({
-      where: { id: input.flightSegmentId },
-      include: {
-        departureAirport: true,
-        arrivalAirport: true,
-        itinerary: {
-          include: {
-            itineraryPassengers: {
-              include: {
-                passenger: {
-                  include: {
-                    userLinks: {
-                      include: { user: { select: { phone: true, telegramChatId: true } } },
-                      take: 1,
-                    },
-                  },
-                },
-              },
-            },
-            accommodations: { include: { mandir: true } },
-            transportTasks: { include: { drivers: { include: { driver: true } } } },
-          },
-        },
-      },
-    });
-
-    if (!segment) {
-      throw new Error("Flight segment not found.");
-    }
-
-    const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
-      name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-      phone: item.passenger.phone,
-    }));
-    const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
-      task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
-    );
-    const accommodation =
-      segment.itinerary.accommodations
-        .map((item) => item.notes ?? item.mandir?.name)
-        .filter(Boolean)
-        .join(" · ") || null;
-
-    const text =
-      input.message?.trim() ||
-      buildFlightSummaryText({
-        changeLabel: "Flight reminder",
-        route: `${segment.departureAirport.code} → ${segment.arrivalAirport.code}`,
-        flightNumbers: [segment.flightNumber],
-        passengers: passengerRows,
-        drivers: driverRows,
-        accommodation,
-      });
-
-    // Minute-level bucket so re-sends after 1 minute are allowed
-    const minuteBucket = Math.floor(Date.now() / 60_000);
-
-    let queued = 0;
-
-    for (const item of segment.itinerary.itineraryPassengers) {
-      const passenger = item.passenger;
-
-      if (input.channel === "TELEGRAM" || input.channel === "TELEGRAM_SMS") {
-        const chatId =
-          passenger.telegramChatId ?? passenger.userLinks[0]?.user.telegramChatId ?? null;
-        const result = await createQueuedNotification(tx, {
-          notificationType: NotificationType.FLIGHT_REMINDER,
-          deliveryChannel: NotificationChannel.TELEGRAM,
-          recipientPassengerId: passenger.id,
-          recipientChatId: chatId,
-          dedupeKey: `oneof:${segment.id}:telegram:${passenger.id}:${minuteBucket}`,
-          payload: { text },
-        });
-        if (result) queued++;
-      }
-
-      if (input.channel === "SMS" || input.channel === "TELEGRAM_SMS") {
-        const phone = passenger.phone ?? passenger.userLinks[0]?.user.phone ?? null;
-        const result = await createQueuedNotification(tx, {
-          notificationType: NotificationType.FLIGHT_REMINDER,
-          deliveryChannel: NotificationChannel.SMS,
-          recipientPassengerId: passenger.id,
-          recipientPhone: phone,
-          dedupeKey: `oneof:${segment.id}:sms:${passenger.id}:${minuteBucket}`,
-          payload: { text },
-        });
-        if (result) queued++;
-      }
-    }
-
-    return { queued };
   });
 }
