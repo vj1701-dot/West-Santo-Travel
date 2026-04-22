@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, MouseEvent, useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
 

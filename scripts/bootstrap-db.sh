@@ -43,10 +43,10 @@ USER_COUNT=$(psql "$DB_CHECK_URL" -t -c "$USER_COUNT_QUERY" 2>/dev/null | xargs)
 if [ -z "$USER_COUNT" ] || [ "$USER_COUNT" -eq 0 ]; then
   echo "No existing users found (computed count: '$USER_COUNT') - seeding default data..."
   node --import tsx prisma/seed.mjs
-  echo "✓ Database initialized successfully!"
+  echo "Database initialized successfully!"
 else
   echo "Found $USER_COUNT existing users - skipping seed and preserving current data."
-  echo "✓ Migrations completed successfully!"
+  echo "Migrations completed successfully!"
 fi
 
 echo "Bootstrap complete!"

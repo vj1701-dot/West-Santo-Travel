@@ -6,7 +6,7 @@
     "dev": "npx next dev",
     "build": "npx next build --webpack",
     "start": "npx next start",
-    "typecheck": "npx next typegen && tsc --noEmit"
+    "typecheck": "node -e \"try{require('fs').rmSync('tsconfig.tsbuildinfo',{force:true})}catch{}\" && npx next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@prisma/client": "^6.7.0",
