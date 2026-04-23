@@ -260,6 +260,15 @@ export function TripBuilder({
     label: driver.name,
     detail: [driver.phone, driver.airportCodes?.join(", ")].filter(Boolean).join(" · "),
   }));
+  const totalTravelers = selectedPassengerIds.length + selectedTravelerRefs.length;
+  const totalTransportEntries = segments.reduce(
+    (count, segment) => count + segment.pickupEntries.length + segment.dropoffEntries.length,
+    0,
+  );
+  const routeSummary =
+    segments.length > 0
+      ? `${segments[0]?.departureAirport?.code ?? "DEP"} to ${segments[segments.length - 1]?.arrivalAirport?.code ?? "ARR"}`
+      : "Not set";
 
   function updateSegment(segmentId: string, nextValue: Partial<SegmentState>) {
     setSegments((current) => current.map((segment) => (segment.id === segmentId ? { ...segment, ...nextValue } : segment)));
@@ -481,7 +490,8 @@ export function TripBuilder({
     <section className="stack">
       {message ? <div className="compact-card"><p>{message}</p></div> : null}
 
-      <div className="stack">
+      <div className="trip-builder-layout">
+        <div className="stack">
         <Accordion type="multiple" defaultValue={["passengers", "segments", "booking", "transport", "accommodation"]}>
           <AccordionItem value="passengers">
             <AccordionTrigger>
@@ -626,9 +636,8 @@ export function TripBuilder({
                     {segments.length} segment{segments.length === 1 ? "" : "s"}
                   </p>
                 </div>
-                <button
+                <span
                   className="button-secondary"
-                  type="button"
                   onClick={(event) => {
                     event.stopPropagation();
                     setSegments((current) => [...current, createSegment(airports)]);
@@ -636,7 +645,7 @@ export function TripBuilder({
                   style={{ marginRight: "2rem" }}
                 >
                   Add segment
-                </button>
+                </span>
               </div>
             </AccordionTrigger>
             <AccordionContent>
@@ -856,8 +865,41 @@ export function TripBuilder({
             {isPending ? "Saving..." : submitLabel}
           </button>
         </div>
+        </div>
+
+        <aside className="trip-builder-sidebar stack">
+          <div className="trip-summary-card">
+            <div className="row-card__title">
+              <div>
+                <p className="eyebrow">Summary</p>
+                <h3>Live preview</h3>
+              </div>
+              <span className="pill">{segments.length} segments</span>
+            </div>
+            <SummaryRow label="Travelers" value={`${totalTravelers}`} />
+            <SummaryRow label="Route" value={routeSummary} />
+            <SummaryRow label="Booking ID" value={bookingId.trim() || "Pending"} />
+            <SummaryRow label="Transport entries" value={`${totalTransportEntries}`} />
+            <SummaryRow label="Trip note" value={tripNote.trim() || "No note"} />
+            <div className="compact-card compact-card--highlighted">
+              <p className="eyebrow" style={{ marginBottom: "6px" }}>Current workflow</p>
+              <p className="notes">
+                The redesign is applied here while keeping your existing trip builder behavior, routes, and API flow.
+              </p>
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="trip-summary-row">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 

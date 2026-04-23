@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
 import { PassengerManager } from "@/components/passenger-manager";
+import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,11 @@ export default async function PassengersPage() {
 
   return (
     <AppShell currentUser={currentUser}>
+      <PageHeader
+        eyebrow="Directory"
+        title="Passengers"
+        description="Passenger directory with the redesigned table, filters, and edit workflow while keeping the current route name."
+      />
       <PassengerManager
         passengers={passengers.map((passenger) => ({
           id: passenger.id,

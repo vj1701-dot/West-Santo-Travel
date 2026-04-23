@@ -2,6 +2,7 @@ import { listAirports, listUsers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { UserManager } from "@/components/user-manager";
 import { requireUser } from "@/lib/auth/session";
 
@@ -16,6 +17,11 @@ export default async function UsersPage() {
 
   return (
     <AppShell currentUser={currentUser}>
+      <PageHeader
+        eyebrow="Directory"
+        title="Users"
+        description="System users, roles, linked identities, and airport assignments with the new shell and dashboard styling."
+      />
       <UserManager
         airports={airports.map((airport) => ({
           id: airport.id,
