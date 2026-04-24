@@ -99,6 +99,21 @@ export function AppShell({
   return (
     <div className="app-shell">
       <aside className="sidebar">
+        {/* SVG filters for the nav button glow effect */}
+        <svg style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }} aria-hidden="true">
+          <defs>
+            <filter id="unopaq">
+              <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -10" />
+            </filter>
+            <filter id="unopaq2">
+              <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 30 -15" />
+            </filter>
+            <filter id="unopaq3">
+              <feColorMatrix type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 15 -5" />
+            </filter>
+          </defs>
+        </svg>
+
         <div className="sb-brand">
           <div className="sb-mono">WST</div>
           <div className="sb-wordmark">
@@ -135,9 +150,22 @@ export function AppShell({
               {section.items.map((item) => {
                 const active = pathname === item.href;
                 return (
-                  <Link key={item.href} className={`sb-item${active ? " active" : ""}`} href={item.href}>
-                    <span>{item.label}</span>
-                  </Link>
+                  <div key={item.href} className="sb-item-container">
+                    <Link
+                      className={`sb-real-link${active ? " active" : ""}`}
+                      href={item.href}
+                      aria-label={item.label}
+                    />
+                    <div className="sb-item-border">
+                      <div className={`sb-item${active ? " active" : ""}`}>
+                        <div className="sb-backdrop" />
+                        <div className="sb-spin sb-spin-blur" />
+                        <div className="sb-spin sb-spin-intense" />
+                        <div className="sb-spin sb-spin-inside" />
+                        <span>{item.label}</span>
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
             </div>

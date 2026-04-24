@@ -206,14 +206,12 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
 
       {panelMode === "create" ? (
         <form className="compact-card stack" onSubmit={handleCreateSubmit}>
-          <div className="row-card__title">
-            <h3 style={{ margin: 0 }}>Add Driver</h3>
+          <h3 style={{ margin: 0 }}>Add Driver</h3>
+          <DriverFields airportChoices={airportChoices} formState={formState} onChange={updateField} />
+          <div className="actions-row" style={{ marginTop: 0 }}>
             <button className="button-secondary" type="button" onClick={closePanel}>
               Cancel
             </button>
-          </div>
-          <DriverFields airportChoices={airportChoices} formState={formState} onChange={updateField} />
-          <div className="actions-row" style={{ marginTop: 0 }}>
             <button disabled={isPending} type="submit">
               {isPending ? "Saving..." : "Create driver"}
             </button>
@@ -223,16 +221,11 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
 
       {panelMode === "edit" && editingDriver ? (
         <form className="compact-card stack" onSubmit={handleEditSubmit}>
-          <div className="row-card__title">
-            <div>
-              <h3 style={{ margin: 0 }}>Edit {editingDriver.name}</h3>
-              <p className="notes" style={{ marginTop: "0.35rem" }}>
-                Airports: {editingDriver.airportCodes.join(", ") || "None"} · Telegram: {editingDriver.telegramChatId ?? "Not linked"}
-              </p>
-            </div>
-            <button className="button-secondary" type="button" onClick={closePanel}>
-              Cancel
-            </button>
+          <div>
+            <h3 style={{ margin: 0 }}>Edit {editingDriver.name}</h3>
+            <p className="notes" style={{ marginTop: "0.35rem" }}>
+              Airports: {editingDriver.airportCodes.join(", ") || "None"} · Telegram: {editingDriver.telegramChatId ?? "Not linked"}
+            </p>
           </div>
           <DriverFields airportChoices={airportChoices} formState={formState} onChange={updateField} />
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
@@ -256,6 +249,9 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
             </button>
           </div>
           <div className="actions-row" style={{ marginTop: 0 }}>
+            <button className="button-secondary" type="button" onClick={closePanel}>
+              Cancel
+            </button>
             <button disabled={isPending} type="submit">
               {isPending ? "Saving..." : "Save driver"}
             </button>

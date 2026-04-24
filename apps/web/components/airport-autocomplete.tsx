@@ -20,6 +20,7 @@ type AirportAutocompleteProps = {
   disabled?: boolean;
   error?: string;
   clearOnSelect?: boolean;
+  hideLabel?: boolean;
 };
 
 type AirportMultiSelectProps = {
@@ -104,6 +105,7 @@ export function AirportAutocomplete({
   disabled,
   error,
   clearOnSelect = false,
+  hideLabel = false,
 }: AirportAutocompleteProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const listboxId = useId();
@@ -137,7 +139,7 @@ export function AirportAutocomplete({
 
   return (
     <label className="field">
-      <span>{label}</span>
+      {!hideLabel && <span>{label}</span>}
       <div className="airport-combobox" ref={rootRef}>
         <input
           aria-activedescendant={isOpen && activeOption ? `${listboxId}-${activeOption.id}` : undefined}
@@ -244,6 +246,7 @@ export function AirportMultiSelect({ airports, label, name, selectedIds = [], di
           airports={availableAirports}
           disabled={disabled}
           label={label}
+          hideLabel
           onSelect={(airport) =>
             setSelectedAirports((current) => {
               const next = current.some((item) => item.id === airport.id) ? current : [...current, airport];

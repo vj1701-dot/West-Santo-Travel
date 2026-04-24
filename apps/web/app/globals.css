@@ -38,9 +38,9 @@
   --radius-xl: 20px;
   --radius-full: 999px;
 
-  --shadow-xs: 0 1px 1px rgba(12, 18, 32, 0.04);
-  --shadow-sm: 0 1px 2px rgba(12, 18, 32, 0.04), 0 1px 3px rgba(12, 18, 32, 0.05);
-  --shadow-md: 0 4px 10px -2px rgba(12, 18, 32, 0.06), 0 2px 4px -2px rgba(12, 18, 32, 0.04);
+  --shadow-xs: 0 1px 2px rgba(12, 18, 32, 0.07), 0 1px 4px rgba(12, 18, 32, 0.05);
+  --shadow-sm: 0 2px 4px rgba(12, 18, 32, 0.09), 0 1px 10px rgba(12, 18, 32, 0.07);
+  --shadow-md: 0 4px 16px -2px rgba(12, 18, 32, 0.13), 0 2px 6px -2px rgba(12, 18, 32, 0.09);
   --shadow-lg: 0 12px 28px -8px rgba(12, 18, 32, 0.12), 0 4px 8px -2px rgba(12, 18, 32, 0.05);
 
   --slate-50: #f8fafc;
@@ -101,8 +101,8 @@ body {
 
 html {
   background:
-    radial-gradient(circle at top left, rgba(79, 70, 229, 0.08), transparent 28%),
-    linear-gradient(180deg, #f8f9fb 0%, #f3f5f8 100%);
+    radial-gradient(circle at top left, rgba(79, 70, 229, 0.12), transparent 38%),
+    linear-gradient(180deg, #eaeff8 0%, #e4eaf3 100%);
 }
 
 body {
@@ -142,8 +142,8 @@ strong {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--surface);
-  border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, #eef2ff 0%, #f0f4ff 100%);
+  border-right: 1px solid var(--accent-200);
 }
 
 .app-shell__main {
@@ -179,7 +179,7 @@ strong {
   align-items: center;
   gap: 10px;
   padding: 18px 18px 14px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--accent-200);
 }
 
 .sb-mono {
@@ -214,7 +214,7 @@ strong {
 
 .role-switch {
   padding: 14px 16px 10px;
-  border-bottom: 1px solid var(--divider);
+  border-bottom: 1px solid var(--accent-200);
 }
 
 .rlabel {
@@ -231,8 +231,8 @@ strong {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   padding: 4px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
+  background: #dde5f8;
+  border: 1px solid var(--accent-200);
   border-radius: 12px;
 }
 
@@ -251,19 +251,26 @@ button {
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: var(--ink-500);
+  color: var(--ink-600, #475569);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.role-seg button:hover,
+.role-seg a:hover {
+  background: var(--accent-100);
+  color: var(--accent-700);
 }
 
 .role-seg button.on,
 .role-seg a.on {
-  background: var(--surface);
-  color: var(--ink-900);
+  background: var(--accent);
+  color: #ffffff;
   box-shadow: var(--shadow-xs);
 }
 
@@ -279,54 +286,157 @@ button {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--ink-400);
+  color: #475569;
+}
+
+/* ── Animated sidebar nav button ── */
+.sb-item-container {
+  position: relative;
+  margin-bottom: 3px;
+}
+
+.sb-real-link {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: 10px;
+  outline: none;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.sb-item-border {
+  padding: 2px;
+  background: #0005;
+  border-radius: 10px;
 }
 
 .sb-item {
   position: relative;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 10px;
-  padding: 9px 10px;
+  padding: 9px 12px;
   border-radius: 8px;
+  background: #111215;
+  color: #c8d0e0;
+  overflow: hidden;
   font-size: 13.5px;
   font-weight: 500;
-  color: var(--ink-700);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: color 120ms ease;
+  border: none;
+  margin-bottom: 0;
+  min-height: 40px;
 }
 
-.sb-item:hover {
-  background: var(--surface-2);
-  color: var(--ink-900);
-}
-
-.sb-item svg {
-  width: 18px;
-  height: 18px;
-  color: var(--ink-500);
-  flex-shrink: 0;
+.sb-real-link:hover ~ .sb-item-border .sb-item {
+  color: #ffffff;
 }
 
 .sb-item.active {
-  background: var(--accent-50);
-  color: var(--accent-700);
-  font-weight: 700;
-}
-
-.sb-item.active svg {
-  color: var(--accent);
+  background: #161a35;
+  color: #a5b4fc;
+  font-weight: 600;
 }
 
 .sb-item.active::before {
   content: "";
   position: absolute;
-  left: -10px;
+  left: 0;
   top: 8px;
   bottom: 8px;
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--accent);
+  z-index: 1;
+}
+
+/* backdrop dot pattern */
+.sb-backdrop {
+  position: absolute;
+  inset: -9900%;
+  background: radial-gradient(circle at 50% 50%, #0000 0, #0000 20%, #111111aa 50%);
+  background-size: 3px 3px;
+  z-index: -1;
+}
+
+/* spinning gradient layers */
+.sb-spin {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  opacity: 0.5;
+  overflow: hidden;
+  transition: opacity 0.3s;
+}
+
+.sb-real-link:active ~ .sb-item-border .sb-spin {
+  opacity: 1;
+}
+
+.sb-real-link.active ~ .sb-item-border .sb-spin {
+  opacity: 0.35;
+}
+
+.sb-spin-blur {
+  filter: blur(2em) url(#unopaq);
+}
+
+.sb-spin-intense {
+  inset: -0.125em;
+  filter: blur(0.25em) url(#unopaq2);
+  border-radius: 0.75em;
+}
+
+.sb-spin-inside {
+  inset: -2px;
+  border-radius: inherit;
+  filter: blur(2px) url(#unopaq3);
+  z-index: 0;
+}
+
+.sb-spin::before {
+  content: "";
+  position: absolute;
+  inset: -150%;
+  animation:
+    speen 8s cubic-bezier(0.56, 0.15, 0.28, 0.86) infinite,
+    woah 4s infinite;
+  animation-play-state: paused;
+}
+
+.sb-real-link:hover ~ .sb-item-border .sb-spin::before {
+  animation-play-state: running;
+}
+
+.sb-real-link.active ~ .sb-item-border .sb-spin::before {
+  animation-play-state: running;
+  animation-duration: 14s, 7s;
+}
+
+.sb-spin-blur::before {
+  background: linear-gradient(90deg, #f50 30%, #0000 50%, #05f 70%);
+}
+
+.sb-spin-intense::before {
+  background: linear-gradient(90deg, #f95 20%, #0000 45% 55%, #59f 80%);
+}
+
+.sb-spin-inside::before {
+  background: linear-gradient(90deg, #fc9 30%, #0000 45% 55%, #9cf 70%);
+}
+
+@keyframes speen {
+  0%   { rotate: 10deg; }
+  50%  { rotate: 190deg; }
+  100% { rotate: 370deg; }
+}
+
+@keyframes woah {
+  0%, 100% { scale: 1; }
+  50%      { scale: 0.75; }
 }
 
 .count {
@@ -345,8 +455,8 @@ button {
   align-items: center;
   gap: 10px;
   padding: 12px;
-  border-top: 1px solid var(--divider);
-  background: var(--surface-2);
+  border-top: 1px solid var(--accent-200);
+  background: #e8eeff;
 }
 
 .avatar {
@@ -532,10 +642,19 @@ button {
 .stat-card,
 .info-tile,
 .dashboard-card {
-  border: 1px solid var(--border);
+  border: 1px solid #c4cad6;
   background: var(--surface);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+}
+
+.compact-card {
+  background: var(--surface-2);
+}
+
+form.dashboard-card {
+  background: linear-gradient(160deg, var(--accent-50) 0%, #f8faff 55%);
+  border-color: var(--accent-200);
 }
 
 .panel,
@@ -667,9 +786,9 @@ button:hover {
 }
 
 .button-secondary {
-  background: #ffffff;
-  color: var(--ink-800);
-  border-color: var(--border-strong);
+  background: #f1f5f9;
+  color: var(--ink-700);
+  border-color: #94a3b8;
   box-shadow: var(--shadow-xs);
 }
 
@@ -695,7 +814,7 @@ button:hover {
 .icon-btn:hover,
 .btn-ghost:hover {
   background: var(--accent-50);
-  border-color: var(--accent-200);
+  border-color: var(--accent);
   color: var(--accent-700);
 }
 
@@ -706,7 +825,7 @@ button:hover {
 
 .accordion-item {
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid #c4cad6;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.86);
   box-shadow: var(--shadow-sm);
@@ -777,12 +896,18 @@ button:hover {
   width: 100%;
   min-height: 44px;
   border-radius: 10px;
-  border: 1px solid var(--border);
+  border: 1px solid #b2bac9;
   background: var(--surface);
   padding: 11px 13px;
   color: var(--ink-900);
   font: inherit;
   box-shadow: var(--shadow-xs);
+}
+
+.field select {
+  cursor: pointer;
+  appearance: auto;
+  background-color: var(--surface);
 }
 
 .field textarea {
@@ -979,23 +1104,39 @@ button:hover {
 }
 
 .admin-form button[value="APPROVED"] {
-  background: var(--success);
-  border-color: #059669;
-  color: white;
+  background: var(--success) !important;
+  border-color: #059669 !important;
+  color: white !important;
 }
 
 .admin-form button[value="APPROVED"]:hover {
-  background: #059669;
+  background: #059669 !important;
 }
 
 .admin-form button[value="REJECTED"] {
-  background: var(--error);
-  border-color: #dc2626;
-  color: white;
+  background: var(--error) !important;
+  border-color: #dc2626 !important;
+  color: white !important;
 }
 
 .admin-form button[value="REJECTED"]:hover {
-  background: #dc2626;
+  background: #dc2626 !important;
+}
+
+.export-card {
+  border: 1px solid #c4cad6;
+  border-radius: var(--radius-lg);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-xs);
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  text-decoration: none;
+  display: block;
+}
+
+.export-card:hover {
+  background: var(--accent-50);
+  border-color: var(--accent-200);
+  box-shadow: var(--shadow-sm);
 }
 
 .segment-card {
@@ -1056,7 +1197,7 @@ button:hover {
 
 .flight-calendar {
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid #c4cad6;
   border-radius: 12px;
   background: var(--surface);
   box-shadow: var(--shadow-sm);
@@ -1133,10 +1274,15 @@ button:hover {
   font-size: 17px;
 }
 
-.flight-calendar__tabs button:hover,
-.flight-calendar__tabs button.active {
+.flight-calendar__tabs button:hover {
   background: var(--surface);
   color: var(--ink-900);
+}
+
+.flight-calendar__tabs button.active {
+  background: var(--accent);
+  color: #ffffff;
+  box-shadow: var(--shadow-xs);
 }
 
 .flight-calendar__body {
@@ -1327,6 +1473,88 @@ button:hover {
 
 .flight-calendar__footer-icon {
   color: var(--ink-400);
+}
+
+.flight-calendar__week-nav {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-2);
+  overflow-x: auto;
+}
+
+.flight-calendar__week-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  min-width: 58px;
+  flex: 1;
+  border-radius: 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-500);
+  cursor: pointer;
+  box-shadow: none;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.flight-calendar__week-day:hover {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--ink-800);
+}
+
+.flight-calendar__week-day.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.flight-calendar__week-day.active:hover {
+  background: var(--accent-700);
+  border-color: var(--accent-700);
+}
+
+.flight-calendar__week-day-name {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: inherit;
+}
+
+.flight-calendar__week-day-num {
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1;
+  color: inherit;
+}
+
+.flight-calendar__week-day-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent-100);
+  color: var(--accent-700);
+  font-size: 10px;
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.flight-calendar__week-day.active .flight-calendar__week-day-count {
+  background: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.flight-calendar__week-day.has-flights:not(.active) .flight-calendar__week-day-num {
+  color: var(--accent);
 }
 
 .detail-list {

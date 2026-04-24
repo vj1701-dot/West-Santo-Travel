@@ -83,6 +83,7 @@ export function FlightCalendarTimeline({
   const [viewMode, setViewMode] = useState<ViewMode>("today");
   const [now, setNow] = useState(() => new Date(nowIso));
   const [selectedFlightId, setSelectedFlightId] = useState<string | null>(null);
+  const [weekDayIndex, setWeekDayIndex] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 60_000);
@@ -103,7 +104,19 @@ export function FlightCalendarTimeline({
   );
   const hasFlightsToday = flightDays.includes(actualToday.getTime());
   const baseDay = new Date(hasFlightsToday || flightDays.length === 0 ? actualToday.getTime() : flightDays[0]);
-  const selectedDate = viewMode === "tomorrow" ? addDays(baseDay, 1) : baseDay;
+
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(baseDay, i)),
+    [baseDay],
+  );
+
+  const selectedDate =
+    viewMode === "tomorrow"
+      ? addDays(baseDay, 1)
+      : viewMode === "week"
+        ? weekDays[weekDayIndex]
+        : baseDay;
+
   const visibleFlights = useMemo(() => {
     return flights
       .map((flight) => ({
@@ -111,16 +124,14 @@ export function FlightCalendarTimeline({
         departure: new Date(flight.departureTimeUtc),
         arrival: new Date(flight.arrivalTimeUtc),
       }))
-      .filter((flight) => {
-        if (viewMode === "week") {
-          const departureDay = startOfDay(flight.departure);
-          return departureDay >= baseDay && departureDay < addDays(baseDay, 7);
-        }
-
-        return isSameDay(flight.departure, selectedDate);
-      })
+      .filter((flight) => isSameDay(flight.departure, selectedDate))
       .sort((a, b) => a.departure.getTime() - b.departure.getTime());
-  }, [baseDay, flights, selectedDate, viewMode]);
+  }, [flights, selectedDate]);
+
+  const weekDayFlightCounts = useMemo(
+    () => weekDays.map((day) => flights.filter((f) => isSameDay(new Date(f.departureTimeUtc), day)).length),
+    [weekDays, flights],
+  );
 
   const lanes = useMemo(() => {
     const laneMap = new Map<string, { code: string; name: string }>();
@@ -130,21 +141,34 @@ export function FlightCalendarTimeline({
         name: buildAirportName(flight.departureAirportName),
       });
     }
-
     return Array.from(laneMap.values()).sort((a, b) => a.code.localeCompare(b.code));
   }, [visibleFlights]);
 
   const selectedFlight = visibleFlights.find((flight) => flight.id === selectedFlightId) ?? null;
+
   const showNowMarker =
-    hasFlightsToday && viewMode === "today" && now.getHours() >= dayStartHour && now.getHours() <= dayEndHour;
+    isSameDay(selectedDate, actualToday) &&
+    now.getHours() >= dayStartHour &&
+    now.getHours() <= dayEndHour;
   const nowLeft = percentFromMinutes(minutesFromWindowStart(now));
+
+  const titleText = viewMode === "week" ? "Weekly flights" : "Today's flights";
+
+  function handleModeChange(newMode: ViewMode) {
+    setViewMode(newMode);
+    setSelectedFlightId(null);
+    if (newMode === "week") {
+      const todayIdx = weekDays.findIndex((day) => isSameDay(day, actualToday));
+      setWeekDayIndex(todayIdx >= 0 ? todayIdx : 0);
+    }
+  }
 
   return (
     <section className="flight-calendar" aria-label="Flight calendar timeline">
       <div className="flight-calendar__header">
         <div>
           <div className="flight-calendar__title-row">
-            <h3>Today&apos;s flights</h3>
+            <h3>{titleText}</h3>
             <span>{formatDateLabel(selectedDate)} - {visibleFlights.length} segments</span>
           </div>
         </div>
@@ -165,10 +189,7 @@ export function FlightCalendarTimeline({
                 role="tab"
                 aria-selected={viewMode === value}
                 className={viewMode === value ? "active" : ""}
-                onClick={() => {
-                  setViewMode(value as ViewMode);
-                  setSelectedFlightId(null);
-                }}
+                onClick={() => handleModeChange(value as ViewMode)}
               >
                 {label}
               </button>
@@ -176,6 +197,38 @@ export function FlightCalendarTimeline({
           </div>
         </div>
       </div>
+
+      {viewMode === "week" && (
+        <div className="flight-calendar__week-nav" role="tablist" aria-label="Week day selector">
+          {weekDays.map((day, i) => (
+            <button
+              key={i}
+              type="button"
+              role="tab"
+              aria-selected={weekDayIndex === i}
+              className={[
+                "flight-calendar__week-day",
+                weekDayIndex === i ? "active" : "",
+                weekDayFlightCounts[i] > 0 ? "has-flights" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={() => {
+                setWeekDayIndex(i);
+                setSelectedFlightId(null);
+              }}
+            >
+              <span className="flight-calendar__week-day-name">
+                {new Intl.DateTimeFormat("en-US", { weekday: "short" }).format(day)}
+              </span>
+              <strong className="flight-calendar__week-day-num">{day.getDate()}</strong>
+              {weekDayFlightCounts[i] > 0 && (
+                <span className="flight-calendar__week-day-count">{weekDayFlightCounts[i]}</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flight-calendar__body">
         <div className="flight-calendar__lane-labels" style={{ gridRow: `2 / span ${Math.max(lanes.length, 1)}` }}>
@@ -216,10 +269,8 @@ export function FlightCalendarTimeline({
 
           {visibleFlights.map((flight) => {
             const laneIndex = lanes.findIndex((lane) => lane.code === flight.departureAirportCode);
-            const departure = viewMode === "week" ? new Date(flight.departure) : flight.departure;
-            const arrival = viewMode === "week" ? new Date(flight.arrival) : flight.arrival;
-            const left = percentFromMinutes(minutesFromWindowStart(departure));
-            const right = percentFromMinutes(minutesFromWindowStart(arrival));
+            const left = percentFromMinutes(minutesFromWindowStart(flight.departure));
+            const right = percentFromMinutes(minutesFromWindowStart(flight.arrival));
             const width = Math.max(8, right - left);
             const isSelected = selectedFlightId === flight.id;
 
