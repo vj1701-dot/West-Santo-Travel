@@ -64,6 +64,11 @@ function formatAirportSummary(airport: { code: string; name: string; city: strin
   return `${airport.code} - ${airport.name}${airport.city ? `, ${airport.city}` : ""}`;
 }
 
+function formatPassengerNames(passengerNames: string[]) {
+  if (passengerNames.length === 0) return "No passengers assigned";
+  return passengerNames.join(", ");
+}
+
 export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRecord[]; role: string }) {
   return (
     <section className="stack">
@@ -78,7 +83,7 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
         {itineraries.length === 0 ? (
           <p className="notes">No itineraries found.</p>
         ) : (
-          <div className="grid gap-4">
+          <div className="boarding-pass-list">
             {itineraries.map((itinerary) => {
               const primarySegment = itinerary.flightSegments[0];
               const brand = getAirlineBrand(primarySegment?.airline ?? "");
@@ -86,88 +91,88 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
               const pickupTasks = itinerary.transportTasks.filter((task) => task.taskType === "PICKUP");
               const dropoffTasks = itinerary.transportTasks.filter((task) => task.taskType === "DROPOFF");
               const accommodationNotes = itinerary.accommodations.map((item) => item.notes).filter(Boolean);
+              const routeLabel = itinerary.flightSegments
+                .map((segment) => `${segment.departureAirport.code} to ${segment.arrivalAirport.code}`)
+                .join(" / ");
               const googleSheetsReviewRequired = itinerary.externalSyncLinks.some(
                 (link) => link.provider === "google-sheets" && link.syncStatus === "REVIEW_REQUIRED",
               );
 
               return (
-                <article
-                  key={itinerary.id}
-                  className="rounded-2xl border border-line bg-white p-5 shadow-sm"
-                  style={{ display: "grid", gap: "1rem" }}
-                >
-                  <div className="row-card__title">
-                    <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-                      <div className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-bold ${brand.accentClassName}`}>
-                        {brand.code}
-                      </div>
-                      <div style={{ display: "grid", gap: "0.35rem" }}>
-                        <h3 style={{ margin: 0, fontSize: "1.1rem" }}>
-                          {itinerary.flightSegments.map((segment) => `${segment.departureAirport.code} → ${segment.arrivalAirport.code}`).join(" · ")}
-                        </h3>
-                        <div className="row-meta">
-                          <span>{brand.name}</span>
-                          {primarySegment ? <span>{formatDateTime(primarySegment.departureTimeLocal)}</span> : null}
-                          <span>Updated {formatDateTime(itinerary.updatedAt)}</span>
-                        </div>
-                      </div>
+                <article key={itinerary.id} className="boarding-pass">
+                  <div className="boarding-pass__stub">
+                    <div className="boarding-pass__brand">
+                      <span>{brand.code}</span>
+                      <strong>{brand.name}</strong>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <span className="pill">{itinerary.status}</span>
-                      {role !== "PASSENGER" && googleSheetsReviewRequired ? (
-                        <span className="pill" style={{ background: "rgba(217, 119, 6, 0.12)", color: "rgb(146, 64, 14)" }}>
-                          Sync review required
-                        </span>
-                      ) : null}
-                      {role !== "PASSENGER" ? (
-                        <Link className="button-secondary" href={`/itineraries/${itinerary.id}/edit`}>
-                          Edit
-                        </Link>
-                      ) : null}
-                    </div>
+                    <TicketField label="Flight" value={primarySegment?.flightNumber ?? "Pending"} />
+                    <TicketField label="Departure" value={primarySegment ? formatDateTime(primarySegment.departureTimeLocal) : "Not scheduled"} />
+                    <TicketField label="Destination" value={routeLabel || "Route pending"} />
+                    <div className="boarding-pass__mini-barcode" aria-hidden="true" />
                   </div>
 
-                  <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
-                    <div style={{ display: "grid", gap: "0.85rem" }}>
-                      {itinerary.flightSegments.map((segment) => (
-                        <div key={segment.id} className="rounded-xl border border-line bg-slate-50 p-4">
-                          <div style={{ display: "grid", gap: "1rem" }}>
-                            <div className="row-card__title">
-                              <div>
-                                <strong style={{ fontSize: "1rem", color: "var(--slate-900)" }}>{segment.flightNumber}</strong>
-                                <p style={{ margin: "0.2rem 0 0", color: "var(--slate-500)" }}>{segment.airline}</p>
-                              </div>
-                            </div>
-                            <DetailRow
-                              label="Departure"
-                              value={formatAirportSummary(segment.departureAirport)}
-                              secondaryValue={formatDateTime(segment.departureTimeLocal)}
-                            />
-                            <DetailRow
-                              label="Arrival"
-                              value={formatAirportSummary(segment.arrivalAirport)}
-                              secondaryValue={formatDateTime(segment.arrivalTimeLocal)}
-                            />
-                          </div>
-                        </div>
-                      ))}
+                  <div className="boarding-pass__main">
+                    <div className="boarding-pass__stripe">
+                      <span>West Santo Travel</span>
+                      <div className="boarding-pass__top-actions">
+                        <strong>Boarding Pass</strong>
+                        <span className="pill">{itinerary.status}</span>
+                        {role !== "PASSENGER" && googleSheetsReviewRequired ? <span className="pill pending">Sync review</span> : null}
+                        {role !== "PASSENGER" ? (
+                          <Link className="button-secondary" href={`/itineraries/${itinerary.id}/edit`}>
+                            Edit
+                          </Link>
+                        ) : null}
+                      </div>
                     </div>
 
-                    <div style={{ display: "grid", gap: "0.75rem" }}>
-                      <DetailRow label="Passengers" value={passengerNames.join(", ")} />
+                    <div className="boarding-pass__body">
+                      <div className="boarding-pass__identity">
+                        <TicketField label="Name" value={formatPassengerNames(passengerNames)} />
+                        <div className="boarding-pass__route">
+                          <span>{primarySegment?.departureAirport.code ?? "DEP"}</span>
+                          <strong>to</strong>
+                          <span>{primarySegment?.arrivalAirport.code ?? "ARR"}</span>
+                        </div>
+                        <div className="boarding-pass__segments">
+                          {itinerary.flightSegments.map((segment) => (
+                            <div key={segment.id} className="boarding-pass__segment">
+                              <div>
+                                <strong>{segment.departureAirport.code} to {segment.arrivalAirport.code}</strong>
+                                <span>{formatAirportSummary(segment.departureAirport)} / {formatAirportSummary(segment.arrivalAirport)}</span>
+                              </div>
+                              <div>
+                                <strong>{segment.flightNumber}</strong>
+                                <span>{formatDateTime(segment.departureTimeLocal)} to {formatDateTime(segment.arrivalTimeLocal)}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="boarding-pass__side">
+                        <TicketField label="Flight" value={primarySegment?.flightNumber ?? "Pending"} />
+                        <TicketField label="Status" value={itinerary.status} />
+                        <TicketField label="Updated" value={formatDateTime(itinerary.updatedAt)} />
+                        <div className="boarding-pass__barcode" aria-hidden="true" />
+                      </div>
+                    </div>
+
+                    <div className="boarding-pass__extras">
+                      <DetailRow label="Passengers" value={formatPassengerNames(passengerNames)} />
                       {pickupTasks.length > 0 ? (
                         <DetailRow
                           label="Pickup"
-                          value={pickupTasks.map((task) => `${task.airport.code}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || task.status}`).join(" · ")}
+                          value={pickupTasks.map((task) => `${task.airport.code}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || task.status}`).join(" / ")}
                         />
                       ) : null}
                       {dropoffTasks.length > 0 ? (
                         <DetailRow
                           label="Dropoff"
-                          value={dropoffTasks.map((task) => `${task.airport.code}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || task.status}`).join(" · ")}
+                          value={dropoffTasks.map((task) => `${task.airport.code}: ${task.drivers.map((entry) => entry.driver.name).join(", ") || task.status}`).join(" / ")}
                         />
                       ) : null}
-                      {accommodationNotes.length > 0 ? <DetailRow label="Accommodation" value={accommodationNotes.join(" · ")} /> : null}
+                      {accommodationNotes.length > 0 ? <DetailRow label="Accommodation" value={accommodationNotes.join(" / ")} /> : null}
                       {itinerary.notes ? <DetailRow label="Trip Note" value={itinerary.notes} /> : null}
                       {itinerary.approvalRequests.length > 0 ? (
                         <DetailRow label="Approvals" value={itinerary.approvalRequests.map((approval) => approval.status).join(", ")} />
@@ -184,18 +189,25 @@ export function ItineraryList({ itineraries, role }: { itineraries: ItineraryRec
   );
 }
 
+function TicketField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="ticket-field">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
 function DetailRow({ label, value, secondaryValue }: { label: string; value: string; secondaryValue?: string }) {
   if (!value.trim()) {
     return null;
   }
 
   return (
-    <div className="rounded-xl border border-line bg-slate-50 p-4">
-      <p className="eyebrow" style={{ marginBottom: "0.35rem" }}>{label}</p>
-      <p style={{ color: "var(--slate-700)", margin: 0 }}>{value}</p>
-      {secondaryValue ? (
-        <p style={{ color: "var(--slate-500)", marginTop: "0.35rem" }}>{secondaryValue}</p>
-      ) : null}
+    <div className="ticket-detail">
+      <p className="eyebrow">{label}</p>
+      <p>{value}</p>
+      {secondaryValue ? <span>{secondaryValue}</span> : null}
     </div>
   );
 }
