@@ -4404,6 +4404,18 @@ export async function updateReminderRule(
   });
 }
 
+export async function deleteReminderRule(id: string) {
+  return prisma.$transaction(async (tx) => {
+    await tx.reminderRun.deleteMany({
+      where: { reminderRuleId: id },
+    });
+
+    return tx.reminderRule.delete({
+      where: { id },
+    });
+  });
+}
+
 function renderReminderTemplate(
   template: string,
   vars: Record<string, string | null | undefined>,
@@ -4895,8 +4907,7 @@ export async function listUpcomingFlightSegments(limit = 30) {
   return prisma.flightSegment.findMany({
     where: {
       itinerary: { isArchived: false },
-      // Temporarily show flights from the last 24 hours to debug timezone issues
-      departureTimeUtc: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+      departureTimeUtc: { gte: new Date() },
     },
     orderBy: { departureTimeUtc: "asc" },
     take: limit,

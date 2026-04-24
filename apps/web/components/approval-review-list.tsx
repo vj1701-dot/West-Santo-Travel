@@ -85,8 +85,8 @@ export function ApprovalReviewList({
               }}
             >
               <input name="reviewComment" placeholder="Review comment" />
-              <button disabled={isPending} name="status" type="submit" value="APPROVED">Approve</button>
-              <button disabled={isPending} name="status" type="submit" value="REJECTED">Reject</button>
+              <button className="admin-form__approve" disabled={isPending} name="status" type="submit" value="APPROVED">Approve</button>
+              <button className="admin-form__reject" disabled={isPending} name="status" type="submit" value="REJECTED">Reject</button>
             </form>
           ) : null}
         </article>

@@ -754,20 +754,21 @@ button,
 }
 
 button {
-  background: var(--accent);
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  border-color: #172033;
   color: white;
-  box-shadow: var(--shadow-xs);
+  box-shadow: 0 10px 18px -14px rgba(17, 24, 39, 0.7);
 }
 
 button:hover {
-  background: var(--accent-700);
+  background: linear-gradient(135deg, #1f2937 0%, #2b3648 100%);
 }
 
 .button-secondary {
-  background: #f1f5f9;
-  color: var(--ink-700);
-  border-color: #94a3b8;
-  box-shadow: var(--shadow-xs);
+  background: #ffffff;
+  color: #20314f;
+  border-color: #8fa6c6;
+  box-shadow: 0 8px 18px -16px rgba(15, 23, 42, 0.46);
 }
 
 .link-button-primary {
@@ -777,23 +778,25 @@ button:hover {
   min-height: 40px;
   padding: 0 14px;
   border-radius: 10px;
-  background: var(--accent);
-  color: white;
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  border: 1px solid #172033;
+  color: #fff7d6;
   font-size: 13px;
-  font-weight: 600;
-  box-shadow: var(--shadow-xs);
+  font-weight: 700;
+  box-shadow: 0 12px 20px -16px rgba(17, 24, 39, 0.75), inset 3px 0 0 #d4af37;
 }
 
 .link-button-primary:hover {
-  background: var(--accent-700);
+  background: linear-gradient(135deg, #1a2435 0%, #293549 100%);
+  color: #ffffff;
 }
 
 .button-secondary:hover,
 .icon-btn:hover,
 .btn-ghost:hover {
-  background: var(--accent-50);
-  border-color: var(--accent);
-  color: var(--accent-700);
+  background: #fff8e1;
+  border-color: #d4af37;
+  color: #7a5d0f;
 }
 
 .accordion-root {
@@ -1081,24 +1084,38 @@ button:hover {
   box-shadow: 0 0 0 3px var(--accent-100);
 }
 
-.admin-form button[value="APPROVED"] {
-  background: var(--success) !important;
-  border-color: #059669 !important;
-  color: white !important;
+.admin-form__approve,
+.admin-form__reject {
+  min-width: 96px;
+  font-weight: 800;
+  text-shadow: none;
 }
 
-.admin-form button[value="APPROVED"]:hover {
-  background: #059669 !important;
+.admin-form__approve {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border-color: #047857 !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 18px -14px rgba(5, 150, 105, 0.6) !important;
 }
 
-.admin-form button[value="REJECTED"] {
-  background: var(--error) !important;
-  border-color: #dc2626 !important;
-  color: white !important;
+.admin-form__approve:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%) !important;
 }
 
-.admin-form button[value="REJECTED"]:hover {
-  background: #dc2626 !important;
+.admin-form__reject {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+  border-color: #b91c1c !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 18px -14px rgba(220, 38, 38, 0.6) !important;
+}
+
+.admin-form__reject:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%) !important;
+}
+
+.admin-form button:disabled {
+  opacity: 0.72;
+  cursor: not-allowed;
 }
 
 .export-card {
@@ -1525,32 +1542,35 @@ button:hover {
   display: inline-flex;
   gap: 4px;
   padding: 5px;
-  border: 1px solid var(--border);
+  border: 1px solid #cfd9e8;
   border-radius: 12px;
-  background: var(--surface-2);
-  box-shadow: var(--shadow-xs);
+  background: #f8fbff;
+  box-shadow: 0 8px 16px -16px rgba(15, 23, 42, 0.4);
 }
 
 .flight-calendar__tabs button {
   min-height: 48px;
   padding: 0 22px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 9px;
   background: transparent;
-  color: var(--ink-500);
+  color: #64748b;
   box-shadow: none;
   font-size: 17px;
+  font-weight: 700;
 }
 
 .flight-calendar__tabs button:hover {
-  background: var(--surface);
-  color: var(--ink-900);
+  background: #fff8e1;
+  border-color: #ead58a;
+  color: #7a5d0f;
 }
 
 .flight-calendar__tabs button.active {
-  background: var(--accent);
-  color: #ffffff;
-  box-shadow: var(--shadow-xs);
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  border-color: #172033;
+  color: #fff7d6;
+  box-shadow: inset 3px 0 0 #d4af37, 0 8px 16px -14px rgba(17, 24, 39, 0.75);
 }
 
 .flight-calendar__body {
@@ -1850,6 +1870,18 @@ button:hover {
 .compact-card--highlighted {
   background: linear-gradient(180deg, var(--accent-50), white);
   border-color: var(--accent-200);
+}
+
+.reminder-rule-card {
+  gap: 14px;
+}
+
+.reminder-rule-card__toggle {
+  align-content: end;
+}
+
+.reminder-rule-card__toggle .button-secondary {
+  justify-self: start;
 }
 
 .preview-link {

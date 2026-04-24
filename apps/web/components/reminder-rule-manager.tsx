@@ -34,6 +34,10 @@ type UpcomingFlight = {
   passengerCount: number;
 };
 
+type EditableRule = ReminderRuleRecord & {
+  isDirty?: boolean;
+};
+
 export function ReminderRuleManager({
   rules,
   workflows,
@@ -46,6 +50,7 @@ export function ReminderRuleManager({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
+  const [editableRules, setEditableRules] = useState<EditableRule[]>(rules);
 
   const [upcomingFlights, setUpcomingFlights] = useState(initialFlights);
   const [isRefreshingFlights, setIsRefreshingFlights] = useState(false);
@@ -56,6 +61,10 @@ export function ReminderRuleManager({
   const [sendMessage, setSendMessage] = useState("");
   const [sendStatus, setSendStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [isSending, setIsSending] = useState(false);
+
+  useEffect(() => {
+    setEditableRules(rules);
+  }, [rules]);
 
   // Refresh flights when component mounts or every 30 seconds
   useEffect(() => {
@@ -155,6 +164,45 @@ export function ReminderRuleManager({
     setMessage("Saved.");
     startTransition(() => router.refresh());
     return true;
+  }
+
+  async function saveRule(rule: EditableRule) {
+    const ok = await submitJson(`/api/reminder-rules/${rule.id}`, "PATCH", {
+      name: rule.name,
+      isActive: rule.isActive,
+      trigger: rule.trigger,
+      audience: rule.audience,
+      channel: rule.channel,
+      offsetMinutes: rule.offsetMinutes,
+      template: rule.template,
+    });
+
+    if (ok) {
+      setEditableRules((current) =>
+        current.map((item) => (item.id === rule.id ? { ...rule, isDirty: false } : item)),
+      );
+    }
+  }
+
+  async function deleteRule(ruleId: string) {
+    const response = await fetch(`/api/reminder-rules/${ruleId}`, {
+      method: "DELETE",
+    });
+    const payload = await response.json();
+
+    if (!response.ok) {
+      setMessage(payload.error?.message ?? "Delete failed.");
+      return;
+    }
+
+    setMessage("Rule deleted.");
+    startTransition(() => router.refresh());
+  }
+
+  function updateRule(ruleId: string, nextValue: Partial<EditableRule>) {
+    setEditableRules((current) =>
+      current.map((rule) => (rule.id === ruleId ? { ...rule, ...nextValue, isDirty: true } : rule)),
+    );
   }
 
   function formatFlightLabel(f: UpcomingFlight) {
@@ -358,8 +406,8 @@ export function ReminderRuleManager({
             <button disabled={isPending} type="submit">Create rule</button>
           </form>
 
-          {rules.map((rule) => (
-            <article key={rule.id} className="compact-card stack">
+          {editableRules.map((rule) => (
+            <article key={rule.id} className="compact-card stack reminder-rule-card">
               <div className="row-card__title">
                 <div>
                   <h3>{rule.name}</h3>
@@ -368,14 +416,79 @@ export function ReminderRuleManager({
                 <span className="pill">{rule.isActive ? "Active" : "Paused"}</span>
               </div>
               {rule.lastError ? <p className="notes">{rule.lastError}</p> : null}
-              <button
-                className="button-secondary"
-                disabled={isPending}
-                onClick={() => void submitJson(`/api/reminder-rules/${rule.id}`, "PATCH", { isActive: !rule.isActive })}
-                type="button"
-              >
-                {rule.isActive ? "Pause rule" : "Enable rule"}
-              </button>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="field">
+                  <span>Name</span>
+                  <input value={rule.name} onChange={(event) => updateRule(rule.id, { name: event.target.value })} />
+                </label>
+                <label className="field">
+                  <span>Offset minutes</span>
+                  <input
+                    type="number"
+                    value={rule.offsetMinutes}
+                    onChange={(event) => updateRule(rule.id, { offsetMinutes: Number(event.target.value) })}
+                  />
+                </label>
+                <label className="field">
+                  <span>Trigger</span>
+                  <select value={rule.trigger} onChange={(event) => updateRule(rule.id, { trigger: event.target.value })}>
+                    <option value="FLIGHT_DEPARTURE">Before flight departure</option>
+                    <option value="BOOKING_CREATED">After booking created</option>
+                    <option value="PICKUP_SCHEDULED">Before pickup</option>
+                    <option value="TRANSPORT_STATUS_CHANGED">Transport status changed</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Audience</span>
+                  <select value={rule.audience} onChange={(event) => updateRule(rule.id, { audience: event.target.value })}>
+                    <option value="PASSENGER">Passenger</option>
+                    <option value="DRIVER">Driver</option>
+                    <option value="COORDINATOR">Coordinator</option>
+                    <option value="ADMIN">Admin</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Channel</span>
+                  <select value={rule.channel} onChange={(event) => updateRule(rule.id, { channel: event.target.value })}>
+                    <option value="TELEGRAM">Telegram</option>
+                    <option value="SMS">SMS</option>
+                    <option value="INTERNAL">Internal</option>
+                  </select>
+                </label>
+                <label className="field reminder-rule-card__toggle">
+                  <span>Status</span>
+                  <button
+                    className="button-secondary"
+                    disabled={isPending}
+                    onClick={() => updateRule(rule.id, { isActive: !rule.isActive })}
+                    type="button"
+                  >
+                    {rule.isActive ? "Pause rule" : "Enable rule"}
+                  </button>
+                </label>
+              </div>
+              <label className="field">
+                <span>Template</span>
+                <textarea value={rule.template} rows={4} onChange={(event) => updateRule(rule.id, { template: event.target.value })} />
+              </label>
+              <div className="actions-row">
+                <button
+                  className="button-secondary"
+                  disabled={isPending || !rule.isDirty}
+                  onClick={() => void saveRule(rule)}
+                  type="button"
+                >
+                  Save changes
+                </button>
+                <button
+                  className="admin-form__reject"
+                  disabled={isPending}
+                  onClick={() => void deleteRule(rule.id)}
+                  type="button"
+                >
+                  Delete rule
+                </button>
+              </div>
             </article>
           ))}
         </div>

@@ -1,5 +1,5 @@
 import { ReminderAudience, ReminderChannel, ReminderTrigger } from "@prisma/client";
-import { updateReminderRule } from "@west-santo/data";
+import { deleteReminderRule, updateReminderRule } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
@@ -27,4 +27,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   }
 
   return ok(await updateReminderRule(id, parsed.data));
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  if (auth instanceof Response) return auth;
+  const { id } = await context.params;
+
+  return ok(await deleteReminderRule(id));
 }
