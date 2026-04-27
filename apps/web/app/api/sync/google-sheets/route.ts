@@ -19,6 +19,9 @@ const tripSchema = z.object({
     z.object({
       firstName: z.string().min(1),
       lastName: z.string().min(1),
+      rawDisplayName: z.string().nullable().optional(),
+      primaryDisplayName: z.string().nullable().optional(),
+      isExtraSeat: z.boolean().nullable().optional(),
     }),
   ).min(1),
   pickupDriverName: z.string().nullable().optional(),

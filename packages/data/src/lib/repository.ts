@@ -21,6 +21,7 @@ import { createHash } from "node:crypto";
 
 import { formatPassengerNames, localDateTimeStringToDate, summarizeDashboard, zonedLocalDateTimeToUtc } from "@west-santo/core";
 
+import { classifyTelegramLinkInput, dedupeGoogleSheetsPassengers, normalizeGoogleSheetsPassenger } from "./google-sheets-sync";
 import { prisma } from "./prisma";
 
 function toSummaryRole(role?: string | null): UserRole {
@@ -82,6 +83,9 @@ type PublicSubmissionPayload = {
 type GoogleSheetsPassengerInput = {
   firstName: string;
   lastName: string;
+  rawDisplayName?: string | null;
+  primaryDisplayName?: string | null;
+  isExtraSeat?: boolean | null;
 };
 
 type GoogleSheetsTripInput = {
@@ -2763,6 +2767,16 @@ function buildGoogleSheetsSourceMetadata(sheetName: string, trip: GoogleSheetsTr
     sheetName,
     sourceRows: trip.sourceRows ?? [],
     locatorNumber: trip.locatorNumber ?? null,
+    passengers: trip.passengers.map((passenger) => {
+      const normalizedPassenger = normalizeGoogleSheetsPassenger(passenger);
+      return {
+        firstName: normalizedPassenger.firstName,
+        lastName: normalizedPassenger.lastName,
+        rawDisplayName: normalizedPassenger.rawDisplayName,
+        primaryDisplayName: normalizedPassenger.primaryDisplayName,
+        isExtraSeat: normalizedPassenger.isExtraSeat,
+      };
+    }),
   };
 }
 
@@ -2970,9 +2984,10 @@ async function createPassengerForGoogleSheetsSync(
 
 async function ensurePassengerForGoogleSheetsSync(
   tx: Prisma.TransactionClient,
-  input: { firstName: string; lastName: string },
+  input: GoogleSheetsPassengerInput,
 ) {
-  const matched = await findPassengerBySyncedName(tx, input);
+  const normalizedInput = normalizeGoogleSheetsPassenger(input);
+  const matched = await findPassengerBySyncedName(tx, normalizedInput);
   if (matched) {
     if (matched.strategy !== "exact_full") {
       await createAuditLog(tx, {
@@ -2983,7 +2998,7 @@ async function ensurePassengerForGoogleSheetsSync(
         newValues: {
           source: GOOGLE_SHEETS_SYNC_ACTOR,
           strategy: matched.strategy,
-          sheetName: buildPassengerDisplayName(input),
+          sheetName: normalizedInput.rawDisplayName || buildPassengerDisplayName(normalizedInput),
         },
       });
     }
@@ -2996,7 +3011,7 @@ async function ensurePassengerForGoogleSheetsSync(
   }
 
   return {
-    passenger: await createPassengerForGoogleSheetsSync(tx, input),
+    passenger: await createPassengerForGoogleSheetsSync(tx, normalizedInput),
     mode: "created" as const,
     matchStrategy: null,
   };
@@ -3146,11 +3161,15 @@ async function resolveItineraryPassengersFromGoogleSheets(
     passengers: GoogleSheetsPassengerInput[];
   },
 ) {
+  const canonicalPassengers = dedupeGoogleSheetsPassengers(input.passengers);
   const resolvedPassengers = await Promise.all(
-    input.passengers.map((passenger) =>
+    canonicalPassengers.map((passenger) =>
       ensurePassengerForGoogleSheetsSync(tx, {
         firstName: passenger.firstName,
         lastName: passenger.lastName,
+        rawDisplayName: passenger.rawDisplayName,
+        primaryDisplayName: passenger.primaryDisplayName,
+        isExtraSeat: passenger.isExtraSeat,
       }),
     ),
   );
@@ -3718,25 +3737,33 @@ type TripInput = {
 };
 
 export async function linkTelegramAccount(chatId: string, rawInput: string, telegramUsername?: string | null) {
-  const normalizedInput = rawInput.trim();
-  const normalizedPhone = normalizePhone(normalizedInput);
+  const lookup = classifyTelegramLinkInput(rawInput);
   const [users, passengers, drivers] = await Promise.all([
     prisma.user.findMany({
       where: {
-        OR: [
-          { email: normalizedInput.toLowerCase() },
-          normalizedPhone ? { phone: normalizedPhone } : undefined,
-        ].filter(Boolean) as Prisma.UserWhereInput[],
+        OR:
+          lookup.kind === "email"
+            ? [
+                {
+                  email: lookup.email,
+                  role: {
+                    in: [UserRole.ADMIN, UserRole.COORDINATOR],
+                  },
+                },
+              ]
+            : [
+                lookup.phone ? { phone: lookup.phone } : undefined,
+              ].filter(Boolean) as Prisma.UserWhereInput[],
       },
     }),
-    normalizedPhone
+    lookup.kind === "phone" && lookup.phone
       ? prisma.passenger.findMany({
-          where: { phone: normalizedPhone },
+          where: { phone: lookup.phone },
         })
       : Promise.resolve([]),
-    normalizedPhone
+    lookup.kind === "phone" && lookup.phone
       ? prisma.driver.findMany({
-          where: { phone: normalizedPhone },
+          where: { phone: lookup.phone },
         })
       : Promise.resolve([]),
   ]);

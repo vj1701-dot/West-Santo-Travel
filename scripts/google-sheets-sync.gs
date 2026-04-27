@@ -20,6 +20,8 @@ const REQUIRED_HEADERS = [
   "Pickup",
 ];
 
+const EXTRA_SEAT_PREFIX_PATTERN = /^(?:exst|exts|xs)\s*/i;
+
 function syncWestSantoSheet() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   if (!sheet) {
@@ -119,8 +121,12 @@ function normalizeRow_(row, headerMap, sheetRowNumber, lastTripContext) {
   const flightNumber = normalizeText_(row[headerMap["Flight #"]]).toUpperCase();
   const departureAirport = normalizeCode_(row[headerMap["Departure From"]]);
   const arrivalAirport = normalizeCode_(row[headerMap["Arrival at"]]);
-  const firstName = normalizeText_(row[headerMap["First Name"]]);
-  const lastName = normalizeText_(row[headerMap["Last Name"]]);
+  const normalizedPassenger = normalizePassengerForSync_(
+    normalizeText_(row[headerMap["First Name"]]),
+    normalizeText_(row[headerMap["Last Name"]]),
+  );
+  const firstName = normalizedPassenger.firstName;
+  const lastName = normalizedPassenger.lastName;
   const cost = normalizeText_(row[headerMap["Cost"]]) || null;
   const dropoffDriverName = normalizeText_(row[headerMap["Drop off"]]) || null;
   const pickupDriverName = normalizeText_(row[headerMap["Pickup"]]) || null;
@@ -221,6 +227,9 @@ function normalizeRow_(row, headerMap, sheetRowNumber, lastTripContext) {
     cost: cost,
     dropoffDriverName: dropoffDriverName,
     pickupDriverName: pickupDriverName,
+    rawDisplayName: normalizedPassenger.rawDisplayName,
+    primaryDisplayName: normalizedPassenger.primaryDisplayName,
+    isExtraSeat: normalizedPassenger.isExtraSeat,
   };
 }
 
@@ -239,22 +248,16 @@ function buildTripContext_(row) {
 }
 
 function buildTripKey_(row) {
-  const identityParts = [
-    row.airline,
-    row.flightNumber,
-    row.departureAirport,
-    row.departureDate,
-    row.departureTime,
-    row.arrivalAirport,
-    row.arrivalDate,
-    row.arrivalTime,
-  ];
-
-  if (row.locatorNumber) {
-    identityParts.unshift(row.locatorNumber);
-  }
-
-  return identityParts.join("|");
+  return [
+    normalizeText_(row.airline).toUpperCase(),
+    normalizeText_(row.flightNumber).toUpperCase(),
+    normalizeText_(row.departureAirport).toUpperCase(),
+    normalizeText_(row.departureDate),
+    normalizeText_(row.departureTime),
+    normalizeText_(row.arrivalAirport).toUpperCase(),
+    normalizeText_(row.arrivalDate),
+    normalizeText_(row.arrivalTime),
+  ].join("|");
 }
 
 function groupRowsIntoTrips_(rows) {
@@ -292,6 +295,9 @@ function groupRowsIntoTrips_(rows) {
       trip.passengers.push({
         firstName: row.firstName,
         lastName: row.lastName,
+        rawDisplayName: row.rawDisplayName || null,
+        primaryDisplayName: row.primaryDisplayName || null,
+        isExtraSeat: row.isExtraSeat === true,
       });
     }
 
@@ -345,6 +351,29 @@ function normalizeCode_(value) {
 
 function normalizeName_(value) {
   return normalizeText_(value).toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ");
+}
+
+function normalizePassengerForSync_(firstName, lastName) {
+  const rawFirstName = normalizeText_(firstName);
+  const rawLastName = normalizeText_(lastName);
+  const rawDisplayName = normalizeText_((rawFirstName + " " + rawLastName).trim());
+  const strippedDisplayName = rawDisplayName.replace(EXTRA_SEAT_PREFIX_PATTERN, "").trim();
+  const isExtraSeat = strippedDisplayName.length > 0 && strippedDisplayName !== rawDisplayName;
+  const primaryDisplayName = strippedDisplayName || rawDisplayName;
+  const parts = primaryDisplayName.split(/\s+/).filter(function (part) {
+    return part;
+  });
+  const canonicalFirstName =
+    parts.length > 1 ? parts.slice(0, -1).join(" ") : parts.length === 1 ? parts[0] : rawFirstName;
+  const canonicalLastName = parts.length > 1 ? parts[parts.length - 1] : rawLastName;
+
+  return {
+    firstName: canonicalFirstName || rawFirstName,
+    lastName: canonicalLastName || rawLastName,
+    rawDisplayName: rawDisplayName,
+    primaryDisplayName: primaryDisplayName,
+    isExtraSeat: isExtraSeat,
+  };
 }
 
 function normalizeDate_(value) {

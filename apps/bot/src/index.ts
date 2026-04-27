@@ -246,7 +246,7 @@ async function handleMessage(update: TelegramUpdate) {
   if (text === "/start") {
     await sendMessage(
       message.chat.id,
-      "Send your phone number in any format, including +1, spaces, or dashes, or share your contact so I can match it with your passenger, driver, or user record.",
+      "Admins and coordinators can send their email address or phone number. Passengers and drivers should send a phone number in any format, or share their contact, so I can match the right record.",
       true,
     );
     return;
@@ -295,7 +295,7 @@ async function handleMessage(update: TelegramUpdate) {
 
   const rawInput = message.contact?.phone_number ?? text;
   if (!rawInput) {
-    await sendMessage(message.chat.id, "Send a phone number or use the contact-share button.");
+    await sendMessage(message.chat.id, "Send an email address, phone number, or use the contact-share button.");
     return;
   }
 
@@ -327,7 +327,7 @@ async function handleMessage(update: TelegramUpdate) {
 
   await sendMessage(
     message.chat.id,
-    "No matching record was found for that phone number. Ask an admin or coordinator to confirm your phone in the system.",
+    "No matching record was found for that email address or phone number. Ask an admin or coordinator to confirm your contact details in the system.",
   );
 }
 
