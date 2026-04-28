@@ -30,6 +30,8 @@ type AirportMultiSelectProps = {
   selectedIds?: string[];
   disabled?: boolean;
   onChange?: (selectedIds: string[]) => void;
+  placeholder?: string;
+  emptyMessage?: string;
 };
 
 const MAX_RESULTS = 8;
@@ -222,7 +224,16 @@ export function AirportAutocomplete({
   );
 }
 
-export function AirportMultiSelect({ airports, label, name, selectedIds = [], disabled, onChange }: AirportMultiSelectProps) {
+export function AirportMultiSelect({
+  airports,
+  label,
+  name,
+  selectedIds = [],
+  disabled,
+  onChange,
+  placeholder = "Add airport access",
+  emptyMessage = "No airports selected.",
+}: AirportMultiSelectProps) {
   const [selectedAirports, setSelectedAirports] = useState<AirportChoice[]>(() =>
     selectedIds.map((id) => airports.find((airport) => airport.id === id)).filter((airport): airport is AirportChoice => Boolean(airport)),
   );
@@ -254,7 +265,7 @@ export function AirportMultiSelect({ airports, label, name, selectedIds = [], di
               return next;
             })
           }
-          placeholder="Add airport access"
+          placeholder={placeholder}
           clearOnSelect
           value={null}
         />
@@ -278,7 +289,7 @@ export function AirportMultiSelect({ airports, label, name, selectedIds = [], di
             ))}
           </div>
         ) : (
-          <p className="muted-inline">No airports selected.</p>
+          <p className="muted-inline">{emptyMessage}</p>
         )}
         {selectedAirports.map((airport) => (
           <input key={airport.id} name={name} type="hidden" value={airport.id} />

@@ -7,8 +7,16 @@ import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
-export default async function ItinerariesPage() {
+export default async function ItinerariesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ itineraryId?: string | string[] }>;
+}) {
   const currentUser = await requireUser();
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const focusedItineraryId = Array.isArray(resolvedSearchParams.itineraryId)
+    ? resolvedSearchParams.itineraryId[0]
+    : resolvedSearchParams.itineraryId;
   const itineraries =
     currentUser.role === "PASSENGER" ? await listPassengerItineraries(currentUser.id) : await listItineraries();
 
@@ -31,6 +39,7 @@ export default async function ItinerariesPage() {
             airport: { code: airport.code },
           })),
         }))}
+        focusedItineraryId={focusedItineraryId}
         role={currentUser.role}
       />
     </AppShell>

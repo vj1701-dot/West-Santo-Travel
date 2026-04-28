@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type PropsWithChildren } from "react";
-import { Bell, ChevronRight, Menu, Search, Settings } from "lucide-react";
+import { ChevronRight, Menu, Search } from "lucide-react";
 
 import { LoginButton } from "@/components/login-button";
 import { LogoutButton } from "@/components/logout-button";
@@ -209,10 +209,10 @@ export function AppShell({
         </svg>
 
         <div className="sb-brand">
-          <div className="sb-mono">WST</div>
+          {/* Logo source: https://www.baps.org/images/baps_logo.svg */}
+          <img alt="BAPS logo" className="sb-logo" src="/images/baps-logo.svg" />
           <div className="sb-wordmark">
             <div className="name">West Santo Travel</div>
-            <div className="sub">Operations Console</div>
           </div>
         </div>
 
@@ -319,12 +319,6 @@ export function AppShell({
             ) : null}
           </form>
           <div className="live">{dateLabel}</div>
-          <button className="icon-btn" type="button" aria-label="Notifications">
-            <Bell />
-          </button>
-          <button className="icon-btn" type="button" aria-label="Settings">
-            <Settings />
-          </button>
         </div>
 
         <main className="content">

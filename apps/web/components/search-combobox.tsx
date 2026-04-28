@@ -19,6 +19,7 @@ type SearchComboboxProps = {
   disabled?: boolean;
   clearOnSelect?: boolean;
   emptyState?: ReactNode;
+  hideLabel?: boolean;
 };
 
 const MAX_RESULTS = 8;
@@ -37,6 +38,7 @@ export function SearchCombobox({
   disabled,
   clearOnSelect = false,
   emptyState,
+  hideLabel = false,
 }: SearchComboboxProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputId = useId();
@@ -98,7 +100,7 @@ export function SearchCombobox({
 
   return (
     <label className="field">
-      <span>{label}</span>
+      {!hideLabel ? <span>{label}</span> : null}
       <div className="airport-combobox" ref={rootRef}>
         <input
           id={inputId}

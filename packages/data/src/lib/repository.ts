@@ -590,13 +590,13 @@ async function createItineraryFromSubmission(
 export async function getDashboardSnapshot(input?: {
   role?: string | null;
   airportIds?: string[] | null;
-  passengerId?: string | null;
+  passengerIds?: string[] | null;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const safeRole = toSummaryRole(input?.role);
   const where = buildItineraryWhere({
     airportIds: input?.airportIds ?? undefined,
-    passengerId: input?.passengerId ?? undefined,
+    passengerIds: input?.passengerIds ?? undefined,
   });
 
   const [todayArrivals, pendingApprovals, unassignedTasks, activeDrivers, itineraries, approvals, transportTasks] =
@@ -1020,7 +1020,7 @@ export async function createApprovalRequest(input: {
 
 type ItineraryQueryOptions = {
   includeArchived?: boolean;
-  passengerId?: string | null;
+  passengerIds?: string[] | null;
   airportIds?: string[] | null;
   limit?: number;
 };
@@ -1032,10 +1032,12 @@ function buildItineraryWhere(options?: ItineraryQueryOptions): Prisma.ItineraryW
     where.isArchived = false;
   }
 
-  if (options?.passengerId) {
+  if (options?.passengerIds && options.passengerIds.length > 0) {
     where.itineraryPassengers = {
       some: {
-        passengerId: options.passengerId,
+        passengerId: {
+          in: options.passengerIds,
+        },
       },
     };
   }
@@ -1099,7 +1101,7 @@ export async function listItineraries(options?: ItineraryQueryOptions) {
 
 export async function listPassengerItineraries(
   userId: string,
-  options?: Omit<ItineraryQueryOptions, "passengerId">,
+  options?: Omit<ItineraryQueryOptions, "passengerIds">,
 ) {
   const link = await prisma.passengerUserLink.findFirst({
     where: { userId },
@@ -1112,7 +1114,7 @@ export async function listPassengerItineraries(
 
   return listItineraries({
     ...options,
-    passengerId: link.passengerId,
+    passengerIds: [link.passengerId],
   });
 }
 
