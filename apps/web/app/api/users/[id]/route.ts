@@ -10,6 +10,8 @@ const updateUserSchema = z.object({
   phone: z.string().nullable().optional(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
+  legalName: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
   role: z.nativeEnum(UserRole).optional(),
   profileType: z.nativeEnum(ProfileType).nullable().optional(),
   excludeFromCoordinatorMessages: z.boolean().optional(),

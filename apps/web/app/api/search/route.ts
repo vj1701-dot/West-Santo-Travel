@@ -116,7 +116,7 @@ export async function GET(request: Request) {
         id: `user:${item.id}`,
         href: "/users",
         title: `${item.firstName} ${item.lastName}`,
-        detail: [item.role, item.profileType?.replace(/_/g, " "), item.email].filter(Boolean).join(" - "),
+        detail: [item.role, item.profileType?.replace(/_/g, " "), item.phone ?? item.email, item.legalName].filter(Boolean).join(" - "),
         type: "User" as const,
       })),
     );

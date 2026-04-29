@@ -122,6 +122,7 @@ type GoogleSheetsSnapshotInput = {
 
 type GoogleSheetsPassengerMatchStrategy = "exact_full" | "exact_swapped" | "fuzzy_full" | "fuzzy_swapped";
 type GoogleSheetsDriverMatchStrategy = "exact" | "fuzzy";
+type GoogleSheetsUserMatchStrategy = "exact_full" | "exact_swapped" | "fuzzy_full" | "fuzzy_swapped";
 
 type GoogleSheetsResolvedPassenger = {
   passenger: {
@@ -206,6 +207,19 @@ function hashGoogleSheetsTripPayload(trip: GoogleSheetsTripInput) {
 
 function buildPassengerDisplayName(input: { firstName?: string | null; lastName?: string | null }) {
   return `${normalizeSyncText(input.firstName)} ${normalizeSyncText(input.lastName)}`.trim() || "Unknown passenger";
+}
+
+function mapProfileTypeToPassengerType(profileType?: ProfileType | null) {
+  switch (profileType) {
+    case ProfileType.WEST_SANTO:
+      return PassengerType.WEST_SANTO;
+    case ProfileType.GUEST_SANTO:
+      return PassengerType.GUEST_SANTO;
+    case ProfileType.HARIBHAKTO:
+      return PassengerType.HARIBHAKTO;
+    default:
+      return DEFAULT_AUTO_PASSENGER_TYPE;
+  }
 }
 
 function assertPassengerTypeAllowed(type: PassengerType) {
@@ -767,7 +781,9 @@ export async function listUsers(search?: string, options?: { includeInactive?: b
             OR: [
               { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
               { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
               { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
+              { notes: { contains: search, mode: Prisma.QueryMode.insensitive } },
             ],
           }
         : {}),
@@ -786,6 +802,8 @@ export async function createUser(input: {
   phone?: string | null;
   firstName: string;
   lastName: string;
+  legalName?: string | null;
+  notes?: string | null;
   role: UserRole;
   profileType?: ProfileType | null;
   excludeFromCoordinatorMessages?: boolean;
@@ -798,6 +816,8 @@ export async function createUser(input: {
         phone: normalizeOptionalPhone(input.phone),
         firstName: input.firstName,
         lastName: input.lastName,
+        legalName: input.legalName ?? null,
+        notes: input.notes ?? null,
         role: input.role,
         profileType: input.profileType ?? null,
         excludeFromCoordinatorMessages: input.excludeFromCoordinatorMessages ?? false,
@@ -841,6 +861,8 @@ export async function updateUser(
     phone?: string | null;
     firstName?: string;
     lastName?: string;
+    legalName?: string | null;
+    notes?: string | null;
     role?: UserRole;
     profileType?: ProfileType | null;
     excludeFromCoordinatorMessages?: boolean;
@@ -863,6 +885,8 @@ export async function updateUser(
         phone: input.phone === undefined ? undefined : normalizeOptionalPhone(input.phone),
         firstName: input.firstName,
         lastName: input.lastName,
+        legalName: input.legalName,
+        notes: input.notes,
         role: input.role,
         profileType: input.profileType,
         excludeFromCoordinatorMessages: input.excludeFromCoordinatorMessages,
@@ -3179,6 +3203,85 @@ async function findPassengerBySyncedName(
   return null;
 }
 
+async function findUserBySyncedName(
+  tx: Prisma.TransactionClient,
+  input: { firstName: string; lastName: string },
+) {
+  const normalizedTarget = normalizeSyncPersonName(input.firstName, input.lastName);
+  const normalizedSwappedTarget = normalizeSyncPersonName(input.lastName, input.firstName);
+  if (!normalizedTarget) {
+    return null;
+  }
+
+  const candidates = await tx.user.findMany({
+    where: { isActive: true },
+    include: {
+      passengerUserLinks: {
+        include: { passenger: true },
+        take: 1,
+      },
+    },
+  });
+
+  const exactFullMatches = candidates.filter((user) => {
+    const normalizedUserName = normalizeSyncPersonName(user.firstName, user.lastName);
+    const normalizedLegalName = normalizeSyncName(user.legalName);
+    return normalizedUserName === normalizedTarget || normalizedLegalName === normalizedTarget;
+  });
+  if (exactFullMatches.length === 1) {
+    return {
+      user: exactFullMatches[0],
+      strategy: "exact_full" as const,
+    };
+  }
+
+  const exactSwappedMatches = candidates.filter((user) => {
+    const normalizedUserName = normalizeSyncPersonName(user.firstName, user.lastName);
+    const normalizedLegalName = normalizeSyncName(user.legalName);
+    return normalizedUserName === normalizedSwappedTarget || normalizedLegalName === normalizedSwappedTarget;
+  });
+  if (exactSwappedMatches.length === 1) {
+    return {
+      user: exactSwappedMatches[0],
+      strategy: "exact_swapped" as const,
+    };
+  }
+
+  const fuzzyFullMatch = pickConfidentMatch(
+    candidates.map((user) => ({
+      user,
+      score: Math.max(
+        getSimilarityScore(normalizeSyncPersonName(user.firstName, user.lastName), normalizedTarget),
+        getSimilarityScore(normalizeSyncName(user.legalName), normalizedTarget),
+      ),
+    })),
+  );
+  if (fuzzyFullMatch) {
+    return {
+      user: fuzzyFullMatch.user,
+      strategy: "fuzzy_full" as const,
+    };
+  }
+
+  const fuzzySwappedMatch = pickConfidentMatch(
+    candidates.map((user) => ({
+      user,
+      score: Math.max(
+        getSimilarityScore(normalizeSyncPersonName(user.firstName, user.lastName), normalizedSwappedTarget),
+        getSimilarityScore(normalizeSyncName(user.legalName), normalizedSwappedTarget),
+      ),
+    })),
+  );
+  if (fuzzySwappedMatch) {
+    return {
+      user: fuzzySwappedMatch.user,
+      strategy: "fuzzy_swapped" as const,
+    };
+  }
+
+  return null;
+}
+
 async function createPassengerForGoogleSheetsSync(
   tx: Prisma.TransactionClient,
   input: { firstName: string; lastName: string },
@@ -3239,6 +3342,57 @@ async function ensurePassengerForGoogleSheetsSync(
       passenger: matched.passenger,
       mode: "matched" as const,
       matchStrategy: matched.strategy,
+    };
+  }
+
+  const matchedUser = await findUserBySyncedName(tx, normalizedInput);
+  if (matchedUser) {
+    let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> | null =
+      matchedUser.user.passengerUserLinks[0]?.passenger ?? null;
+    let mode: GoogleSheetsResolvedPassenger["mode"] = "matched";
+
+    if (!passenger) {
+      passenger = await findPassengerMatchByIdentity(tx, {
+        email: matchedUser.user.email,
+        phone: matchedUser.user.phone,
+      });
+      if (passenger) {
+        await ensurePassengerUserLink(tx, {
+          userId: matchedUser.user.id,
+          passengerId: passenger.id,
+        });
+      }
+    }
+
+    if (!passenger) {
+      passenger = await createPassengerFromTraveler(tx, {
+        sourceType: "USER",
+        user: matchedUser.user,
+      });
+      await ensurePassengerUserLink(tx, {
+        userId: matchedUser.user.id,
+        passengerId: passenger.id,
+      });
+      mode = "created";
+    }
+
+    await createAuditLog(tx, {
+      action: "PASSENGER_MATCHED_FROM_GOOGLE_SHEETS_USER",
+      entityType: "Passenger",
+      entityId: passenger.id,
+      source: AuditSource.IMPORT,
+      newValues: {
+        source: GOOGLE_SHEETS_SYNC_ACTOR,
+        userId: matchedUser.user.id,
+        strategy: matchedUser.strategy,
+        sheetName: normalizedInput.rawDisplayName || buildPassengerDisplayName(normalizedInput),
+      },
+    });
+
+    return {
+      passenger,
+      mode,
+      matchStrategy: matchedUser.strategy,
     };
   }
 
@@ -3778,7 +3932,10 @@ async function createPassengerFromTraveler(
           firstName: string;
           lastName: string;
           email: string;
+          legalName?: string | null;
           phone?: string | null;
+          profileType?: ProfileType | null;
+          notes?: string | null;
         };
         actorUserId?: string | null;
       }
@@ -3805,8 +3962,11 @@ async function createPassengerFromTraveler(
       firstName: parsedName.firstName?.trim() || "Traveler",
       lastName: parsedName.lastName?.trim() || "Passenger",
       email: input.sourceType === "USER" ? input.user.email.toLowerCase() : null,
+      legalName: input.sourceType === "USER" ? input.user.legalName ?? null : null,
       phone: normalizeOptionalPhone(input.sourceType === "USER" ? input.user.phone : input.driver.phone),
-      passengerType: DEFAULT_AUTO_PASSENGER_TYPE,
+      notes: input.sourceType === "USER" ? input.user.notes ?? null : null,
+      passengerType:
+        input.sourceType === "USER" ? mapProfileTypeToPassengerType(input.user.profileType) : DEFAULT_AUTO_PASSENGER_TYPE,
       isActive: true,
     },
   });

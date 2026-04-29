@@ -17,8 +17,10 @@ type UserRecord = {
   id: string;
   firstName: string;
   lastName: string;
+  legalName: string | null;
   email: string;
   phone: string | null;
+  notes: string | null;
   role: "ADMIN" | "COORDINATOR" | "PASSENGER";
   profileType: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | null;
   excludeFromCoordinatorMessages: boolean;
@@ -36,8 +38,10 @@ type UserRecord = {
 type FormState = {
   firstName: string;
   lastName: string;
+  legalName: string;
   email: string;
   phone: string;
+  notes: string;
   role: "ADMIN" | "COORDINATOR" | "PASSENGER";
   profileType: "" | "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO";
   excludeFromCoordinatorMessages: boolean;
@@ -50,8 +54,10 @@ type FormState = {
 const emptyForm: FormState = {
   firstName: "",
   lastName: "",
+  legalName: "",
   email: "",
   phone: "",
+  notes: "",
   role: "COORDINATOR",
   profileType: "",
   excludeFromCoordinatorMessages: false,
@@ -65,8 +71,10 @@ function toFormState(user: UserRecord): FormState {
   return {
     firstName: user.firstName,
     lastName: user.lastName,
+    legalName: user.legalName ?? "",
     email: user.email,
     phone: user.phone ?? "",
+    notes: user.notes ?? "",
     role: user.role,
     profileType: user.profileType ?? "",
     excludeFromCoordinatorMessages: user.excludeFromCoordinatorMessages,
@@ -102,7 +110,10 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     const query = search.trim().toLowerCase();
     if (!query) return users;
     return users.filter((user) =>
-      [user.firstName, user.lastName, user.email, user.phone ?? "", user.role, user.profileType ?? ""].join(" ").toLowerCase().includes(query),
+      [user.firstName, user.lastName, user.legalName ?? "", user.email, user.phone ?? "", user.notes ?? "", user.role, user.profileType ?? ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
     );
   }, [users, search]);
 
@@ -142,8 +153,10 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     const ok = await submitJson("/api/users", "POST", {
       firstName: formState.firstName,
       lastName: formState.lastName,
+      legalName: formState.legalName || null,
       email: formState.email,
       phone: formState.phone || null,
+      notes: formState.notes || null,
       role: formState.role,
       profileType: formState.profileType || null,
       excludeFromCoordinatorMessages: formState.excludeFromCoordinatorMessages,
@@ -162,8 +175,10 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     await submitJson(`/api/users/${editingUser.id}`, "PATCH", {
       firstName: formState.firstName,
       lastName: formState.lastName,
+      legalName: formState.legalName || null,
       email: formState.email,
       phone: formState.phone || null,
+      notes: formState.notes || null,
       role: formState.role,
       profileType: formState.profileType || null,
       excludeFromCoordinatorMessages: formState.excludeFromCoordinatorMessages,
@@ -317,7 +332,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 <strong>
                   {user.firstName} {user.lastName}
                 </strong>
-                <div className="muted-inline">{user.email}</div>
+                <div className="muted-inline">{user.phone ?? user.email ?? user.legalName ?? "No contact"}</div>
               </td>
               <td>{user.role}</td>
               <td>{user.profileType ? user.profileType.replace(/_/g, " ") : "Not set"}</td>
@@ -383,15 +398,19 @@ function UserFields({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">
+          <span>Legal name</span>
+          <input value={formState.legalName} onChange={(event) => onChange("legalName", event.target.value)} />
+        </label>
+        <label className="field">
           <span>Email used for login</span>
           <input type="email" value={formState.email} onChange={(event) => onChange("email", event.target.value)} required />
         </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">
           <span>Phone</span>
           <input value={formState.phone} onChange={(event) => onChange("phone", event.target.value)} />
         </label>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">
           <span>Role</span>
           <select value={formState.role} onChange={(event) => onChange("role", event.target.value as FormState["role"])}>
@@ -410,6 +429,10 @@ function UserFields({
           </select>
         </label>
       </div>
+      <label className="field">
+        <span>Food / diet / notes</span>
+        <textarea rows={4} value={formState.notes} onChange={(event) => onChange("notes", event.target.value)} />
+      </label>
       <div className="grid gap-3 sm:grid-cols-2">
         {includeActive ? (
           <label className="checkbox" style={{ alignSelf: "end" }}>

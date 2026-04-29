@@ -10,6 +10,8 @@ const createUserSchema = z.object({
   phone: z.string().nullable().optional(),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
+  legalName: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
   role: z.nativeEnum(UserRole),
   profileType: z.nativeEnum(ProfileType).nullable().optional(),
   excludeFromCoordinatorMessages: z.boolean().optional(),

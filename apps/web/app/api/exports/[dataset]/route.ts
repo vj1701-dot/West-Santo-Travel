@@ -83,6 +83,7 @@ export async function GET(_: Request, context: { params: Promise<{ dataset: stri
       userId: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
+      legalName: user.legalName ?? "",
       email: user.email,
       phone: user.phone ?? "",
       role: user.role,
@@ -91,6 +92,7 @@ export async function GET(_: Request, context: { params: Promise<{ dataset: stri
       airports: [...user.adminAirports, ...user.coordinatorAirports].map((assignment) => assignment.airport.code).join(" | "),
       telegramChatId: user.telegramChatId ?? "",
       telegramUsername: user.telegramUsername ?? "",
+      notes: user.notes ?? "",
     }));
   } else {
     return fail("NOT_FOUND", "Unknown export dataset.", 404);
