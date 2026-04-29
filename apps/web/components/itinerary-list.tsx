@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
+import { Plane } from "lucide-react";
 
 import { getAirlineBrand } from "@/lib/airlines";
 
@@ -67,7 +68,11 @@ function formatDateTime(value: Date | null | undefined) {
 }
 
 function formatPassengerName(firstName: string, lastName: string) {
-  return [lastName, firstName].filter(Boolean).join(", ").trim();
+  return [lastName, firstName].filter(Boolean).join(" ").trim();
+}
+
+function formatAirportLabel(airport?: { code: string; city: string | null }) {
+  return airport?.city?.trim() || airport?.code || "Airport";
 }
 
 function formatTransportSummary(
@@ -281,13 +286,14 @@ function ItineraryCard({
       </div>
 
       <div className="boarding-pass-card__meta">
-        <div className="boarding-pass-card__code">{primarySegment?.departureAirport.code ?? "DEP"}</div>
+        <div className="boarding-pass-card__code">{formatAirportLabel(primarySegment?.departureAirport)}</div>
         <div className="boarding-pass-card__flight">
+          <Plane aria-hidden="true" size={16} strokeWidth={2} />
           <span>{airlineCode}</span>
           <strong>{primarySegment ? primarySegment.flightNumber : "Pending"}</strong>
         </div>
         <div className="boarding-pass-card__code boarding-pass-card__code--arrival">
-          {finalSegment?.arrivalAirport.code ?? "ARR"}
+          {formatAirportLabel(finalSegment?.arrivalAirport)}
         </div>
       </div>
 
