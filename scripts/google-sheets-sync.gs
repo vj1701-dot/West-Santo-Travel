@@ -20,7 +20,7 @@ const REQUIRED_HEADERS = [
   "Pickup",
 ];
 
-const EXTRA_SEAT_PREFIX_PATTERN = /^(?:exst|exts|xs)\s*/i;
+const EXTRA_SEAT_ALIAS_PATTERN = /(?:exst|exts|xs)/i;
 
 function syncWestSantoSheet() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
@@ -357,8 +357,17 @@ function normalizePassengerForSync_(firstName, lastName) {
   const rawFirstName = normalizeText_(firstName);
   const rawLastName = normalizeText_(lastName);
   const rawDisplayName = normalizeText_((rawFirstName + " " + rawLastName).trim());
-  const strippedDisplayName = rawDisplayName.replace(EXTRA_SEAT_PREFIX_PATTERN, "").trim();
-  const isExtraSeat = strippedDisplayName.length > 0 && strippedDisplayName !== rawDisplayName;
+  const cleanedWords = rawDisplayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(function (word) {
+      return word.replace(/^(?:exst|exts|xs)+/i, "").trim();
+    })
+    .filter(function (word) {
+      return word && !/^(?:exst|exts|xs)$/i.test(word);
+    });
+  const strippedDisplayName = cleanedWords.join(" ").trim();
+  const isExtraSeat = EXTRA_SEAT_ALIAS_PATTERN.test(rawDisplayName);
   const primaryDisplayName = strippedDisplayName || rawDisplayName;
   const parts = primaryDisplayName.split(/\s+/).filter(function (part) {
     return part;

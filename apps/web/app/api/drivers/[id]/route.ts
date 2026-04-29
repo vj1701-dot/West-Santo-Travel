@@ -1,3 +1,4 @@
+import { ProfileType } from "@prisma/client";
 import { disableDriver, updateDriver } from "@west-santo/data";
 import { z } from "zod";
 
@@ -7,6 +8,7 @@ import { requireApiRoles } from "@/lib/auth/guards";
 const updateDriverSchema = z.object({
   name: z.string().min(1).optional(),
   phone: z.string().nullable().optional(),
+  profileType: z.nativeEnum(ProfileType).nullable().optional(),
   notes: z.string().nullable().optional(),
   airportIds: z.array(z.string().uuid()).optional(),
 });

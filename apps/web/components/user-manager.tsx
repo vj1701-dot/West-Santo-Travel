@@ -20,6 +20,8 @@ type UserRecord = {
   email: string;
   phone: string | null;
   role: "ADMIN" | "COORDINATOR" | "PASSENGER";
+  profileType: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | null;
+  excludeFromCoordinatorMessages: boolean;
   isActive: boolean;
   telegramChatId: string | null;
   telegramUsername: string | null;
@@ -37,6 +39,8 @@ type FormState = {
   email: string;
   phone: string;
   role: "ADMIN" | "COORDINATOR" | "PASSENGER";
+  profileType: "" | "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO";
+  excludeFromCoordinatorMessages: boolean;
   airportIds: string[];
   isActive: boolean;
   chatId: string;
@@ -49,6 +53,8 @@ const emptyForm: FormState = {
   email: "",
   phone: "",
   role: "COORDINATOR",
+  profileType: "",
+  excludeFromCoordinatorMessages: false,
   airportIds: [],
   isActive: true,
   chatId: "",
@@ -62,6 +68,8 @@ function toFormState(user: UserRecord): FormState {
     email: user.email,
     phone: user.phone ?? "",
     role: user.role,
+    profileType: user.profileType ?? "",
+    excludeFromCoordinatorMessages: user.excludeFromCoordinatorMessages,
     airportIds: user.airportIds,
     isActive: user.isActive,
     chatId: "",
@@ -94,7 +102,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     const query = search.trim().toLowerCase();
     if (!query) return users;
     return users.filter((user) =>
-      [user.firstName, user.lastName, user.email, user.phone ?? "", user.role].join(" ").toLowerCase().includes(query),
+      [user.firstName, user.lastName, user.email, user.phone ?? "", user.role, user.profileType ?? ""].join(" ").toLowerCase().includes(query),
     );
   }, [users, search]);
 
@@ -137,6 +145,8 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
       email: formState.email,
       phone: formState.phone || null,
       role: formState.role,
+      profileType: formState.profileType || null,
+      excludeFromCoordinatorMessages: formState.excludeFromCoordinatorMessages,
       airportIds: formState.airportIds,
     });
 
@@ -155,6 +165,8 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
       email: formState.email,
       phone: formState.phone || null,
       role: formState.role,
+      profileType: formState.profileType || null,
+      excludeFromCoordinatorMessages: formState.excludeFromCoordinatorMessages,
       airportIds: formState.airportIds,
       isActive: formState.isActive,
     });
@@ -291,6 +303,8 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
           <tr>
             <th>User</th>
             <th>Role</th>
+            <th>Type</th>
+            <th>Messages</th>
             <th>Airports</th>
             <th>Identity</th>
             <th>Actions</th>
@@ -306,6 +320,8 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 <div className="muted-inline">{user.email}</div>
               </td>
               <td>{user.role}</td>
+              <td>{user.profileType ? user.profileType.replace(/_/g, " ") : "Not set"}</td>
+              <td>{user.role === "COORDINATOR" && user.excludeFromCoordinatorMessages ? "Excluded" : "Active"}</td>
               <td>{user.airportCodes.join(", ") || "None"}</td>
               <td>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</td>
               <td>
@@ -333,7 +349,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
           ))}
           {filteredUsers.length === 0 ? (
             <tr>
-              <td colSpan={5}>No users found.</td>
+              <td colSpan={7}>No users found.</td>
             </tr>
           ) : null}
         </tbody>
@@ -384,6 +400,17 @@ function UserFields({
             <option value="PASSENGER">Passenger</option>
           </select>
         </label>
+        <label className="field">
+          <span>Type</span>
+          <select value={formState.profileType} onChange={(event) => onChange("profileType", event.target.value as FormState["profileType"])}>
+            <option value="">Not set</option>
+            <option value="WEST_SANTO">West Santo</option>
+            <option value="GUEST_SANTO">Guest Santo</option>
+            <option value="HARIBHAKTO">Haribhakt</option>
+          </select>
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         {includeActive ? (
           <label className="checkbox" style={{ alignSelf: "end" }}>
             <input
@@ -395,6 +422,16 @@ function UserFields({
           </label>
         ) : null}
       </div>
+      {formState.role === "COORDINATOR" ? (
+        <label className="checkbox">
+          <input
+            checked={formState.excludeFromCoordinatorMessages}
+            onChange={(event) => onChange("excludeFromCoordinatorMessages", event.target.checked)}
+            type="checkbox"
+          />{" "}
+          Exclude from messages
+        </label>
+      ) : null}
       <AirportMultiSelect
         airports={airportChoices}
         label="Assigned airports"

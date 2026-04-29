@@ -21,7 +21,7 @@ const pageResults = [
   { href: "/users", title: "Users", detail: "Authorized app users", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/reminders", title: "Reminders", detail: "Reminder workflows and rules", roles: ["ADMIN", "COORDINATOR"] },
   { href: "/approvals", title: "Approvals", detail: "Pending approval queue", roles: ["ADMIN", "COORDINATOR"] },
-  { href: "/admin", title: "Admin", detail: "Admin tools and exports", roles: ["ADMIN"] },
+  { href: "/admin", title: "Reports", detail: "Reports, refunds, and exports", roles: ["ADMIN"] },
 ];
 
 function matches(query: string, ...values: Array<string | null | undefined>) {
@@ -100,13 +100,13 @@ export async function GET(request: Request) {
 
     results.push(
       ...drivers
-        .filter((driver) => matches(query, driver.name, driver.phone, driver.notes, ...driver.driverAirports.map((item) => item.airport.code)))
+        .filter((driver) => matches(query, driver.name, driver.phone, driver.notes, driver.profileType ?? undefined, ...driver.driverAirports.map((item) => item.airport.code)))
         .slice(0, 8)
         .map((driver) => ({
           id: `driver:${driver.id}`,
           href: "/drivers",
           title: driver.name,
-          detail: [driver.phone, driver.driverAirports.map((item) => item.airport.code).join(", ")].filter(Boolean).join(" - ") || "Driver",
+          detail: [driver.phone, driver.profileType?.replace(/_/g, " "), driver.driverAirports.map((item) => item.airport.code).join(", ")].filter(Boolean).join(" - ") || "Driver",
           type: "Driver" as const,
         })),
     );
@@ -116,7 +116,7 @@ export async function GET(request: Request) {
         id: `user:${item.id}`,
         href: "/users",
         title: `${item.firstName} ${item.lastName}`,
-        detail: `${item.role} - ${item.email}`,
+        detail: [item.role, item.profileType?.replace(/_/g, " "), item.email].filter(Boolean).join(" - "),
         type: "User" as const,
       })),
     );

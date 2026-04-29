@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ItineraryLifecycleActions } from "@/components/itinerary-lifecycle-actions";
 import { PageHeader } from "@/components/page-header";
+import { RefundManager } from "@/components/refund-manager";
 import { TripBuilder } from "@/components/trip-builder";
 import { requireUser } from "@/lib/auth/session";
 
@@ -106,6 +107,28 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
         submitLabel="Save changes"
         submitUrl={`/api/itineraries/${itinerary.id}`}
         successPath="/itineraries"
+      />
+      <RefundManager
+        hasTripCost={Boolean(itinerary.booking?.totalCost !== null && itinerary.booking?.totalCost !== undefined)}
+        itineraryId={itinerary.id}
+        passengers={itinerary.itineraryPassengers.map((item) => ({
+          id: item.passenger.id,
+          name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+        }))}
+        refunds={itinerary.refundEvents.map((refund) => ({
+          id: refund.id,
+          amount: Number(refund.amount),
+          refundedAt: refund.refundedAt.toISOString().slice(0, 10),
+          note: refund.note ?? null,
+          recordedBy:
+            refund.recordedByUser?.name ||
+            `${refund.recordedByUser?.firstName ?? ""} ${refund.recordedByUser?.lastName ?? ""}`.trim() ||
+            null,
+          allocations: refund.allocations.map((allocation) => ({
+            passengerName: `${allocation.bookingAllocation.passenger.firstName} ${allocation.bookingAllocation.passenger.lastName}`,
+            amount: Number(allocation.amount),
+          })),
+        }))}
       />
     </AppShell>
   );

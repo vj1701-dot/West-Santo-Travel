@@ -13,7 +13,7 @@ const convertSubmissionSchema = z.object({
         firstName: z.string().min(1),
         lastName: z.string().min(1),
         phone: z.string().nullable().optional(),
-        passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO", "EXTRA_SEAT"]).optional(),
+        passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO"]).optional(),
       }),
     )
     .min(1),

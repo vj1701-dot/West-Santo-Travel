@@ -21,6 +21,12 @@ enum PassengerType {
   EXTRA_SEAT
 }
 
+enum ProfileType {
+  WEST_SANTO
+  GUEST_SANTO
+  HARIBHAKTO
+}
+
 enum ItineraryStatus {
   CREATED
   CONFIRMED
@@ -151,6 +157,8 @@ model User {
   lastLoginAt      DateTime? @db.Timestamptz(6)
   telegramChatId   String?  @unique
   telegramUsername String?
+  excludeFromCoordinatorMessages Boolean @default(false)
+  profileType      ProfileType?
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
@@ -172,6 +180,7 @@ model User {
   csvImportJobs          CsvImportJob[]
   aiQueryLogs            AiQueryLog[]
   createdReminderRules   ReminderRule[]
+  recordedRefundEvents   RefundEvent[]         @relation("RefundRecordedByUser")
   accounts              Account[]
   sessions              Session[]
 
@@ -371,6 +380,7 @@ model Driver {
   phone            String?
   telegramChatId   String?  @unique
   telegramUsername String?
+  profileType      ProfileType?
   isActive         Boolean  @default(true)
   notes            String?
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
@@ -416,6 +426,7 @@ model Itinerary {
   flightSegments   FlightSegment[]
   accommodations   Accommodation[]
   transportTasks   TransportTask[]
+  refundEvents     RefundEvent[]
   externalSyncLinks ExternalSyncLink[]
   approvalRequests ApprovalRequest[]
   duplicateFlags   DuplicateFlag[]      @relation("DuplicateFlagPrimaryItinerary")
@@ -471,6 +482,7 @@ model Booking {
 
   itinerary   Itinerary           @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
   allocations BookingAllocation[]
+  refundEvents RefundEvent[]
 
   @@index([confirmationNumber])
 }
@@ -486,8 +498,45 @@ model BookingAllocation {
 
   booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   passenger Passenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  refundAllocations RefundAllocation[]
 
   @@unique([bookingId, passengerId])
+}
+
+model RefundEvent {
+  id               String   @id @default(uuid()) @db.Uuid
+  itineraryId      String   @db.Uuid
+  bookingId        String   @db.Uuid
+  amount           Decimal  @db.Decimal(12, 2)
+  refundedAt       DateTime @db.Date
+  note             String?
+  recordedByUserId String?  @db.Uuid
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  itinerary        Itinerary          @relation(fields: [itineraryId], references: [id], onDelete: Cascade)
+  booking          Booking            @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  recordedByUser   User?              @relation("RefundRecordedByUser", fields: [recordedByUserId], references: [id])
+  allocations      RefundAllocation[]
+
+  @@index([itineraryId, refundedAt])
+  @@index([bookingId])
+  @@index([recordedByUserId])
+}
+
+model RefundAllocation {
+  id               String   @id @default(uuid()) @db.Uuid
+  refundEventId    String   @db.Uuid
+  bookingAllocationId String @db.Uuid
+  amount           Decimal  @db.Decimal(12, 2)
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
+
+  refundEvent      RefundEvent       @relation(fields: [refundEventId], references: [id], onDelete: Cascade)
+  bookingAllocation BookingAllocation @relation(fields: [bookingAllocationId], references: [id], onDelete: Cascade)
+
+  @@unique([refundEventId, bookingAllocationId])
+  @@index([bookingAllocationId])
 }
 
 model FlightSegment {

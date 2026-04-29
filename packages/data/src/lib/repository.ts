@@ -7,6 +7,7 @@ import {
   NotificationStatus,
   NotificationType,
   PassengerType,
+  ProfileType,
   Prisma,
   ReminderAudience,
   ReminderChannel,
@@ -161,6 +162,9 @@ type GoogleSheetsPendingRosterDiff = {
 const GOOGLE_SHEETS_SYNC_PROVIDER = "google-sheets";
 const GOOGLE_SHEETS_SYNC_ACTOR = "google-sheets-sync";
 const DEFAULT_SYNC_PASSENGER_TYPE = PassengerType.HARIBHAKTO;
+const DEFAULT_AUTO_PASSENGER_TYPE = PassengerType.HARIBHAKTO;
+const EXTRA_SEAT_FIRST_NAME = "Extra";
+const EXTRA_SEAT_LAST_NAME = "Seat";
 
 function normalizeSyncText(value?: string | null) {
   return value?.trim() ?? "";
@@ -202,6 +206,12 @@ function hashGoogleSheetsTripPayload(trip: GoogleSheetsTripInput) {
 
 function buildPassengerDisplayName(input: { firstName?: string | null; lastName?: string | null }) {
   return `${normalizeSyncText(input.firstName)} ${normalizeSyncText(input.lastName)}`.trim() || "Unknown passenger";
+}
+
+function assertPassengerTypeAllowed(type: PassengerType) {
+  if (type === PassengerType.EXTRA_SEAT) {
+    throw new Error("Extra Seat must be added using the canonical passenger record, not passenger type.");
+  }
 }
 
 function arraysEqualAsSets(left: string[], right: string[]) {
@@ -729,6 +739,9 @@ export async function updatePassenger(
     notes?: string | null;
   },
 ) {
+  if (input.passengerType) {
+    assertPassengerTypeAllowed(input.passengerType as PassengerType);
+  }
   return prisma.passenger.update({
     where: { id },
     data: {
@@ -774,6 +787,8 @@ export async function createUser(input: {
   firstName: string;
   lastName: string;
   role: UserRole;
+  profileType?: ProfileType | null;
+  excludeFromCoordinatorMessages?: boolean;
   airportIds?: string[];
 }) {
   return prisma.$transaction(async (tx) => {
@@ -784,6 +799,8 @@ export async function createUser(input: {
         firstName: input.firstName,
         lastName: input.lastName,
         role: input.role,
+        profileType: input.profileType ?? null,
+        excludeFromCoordinatorMessages: input.excludeFromCoordinatorMessages ?? false,
         accessProvisionedAt: new Date(),
       },
     });
@@ -825,6 +842,8 @@ export async function updateUser(
     firstName?: string;
     lastName?: string;
     role?: UserRole;
+    profileType?: ProfileType | null;
+    excludeFromCoordinatorMessages?: boolean;
     isActive?: boolean;
     airportIds?: string[];
   },
@@ -845,6 +864,8 @@ export async function updateUser(
         firstName: input.firstName,
         lastName: input.lastName,
         role: input.role,
+        profileType: input.profileType,
+        excludeFromCoordinatorMessages: input.excludeFromCoordinatorMessages,
         isActive: input.isActive,
       },
     });
@@ -960,6 +981,7 @@ export async function createPassenger(input: {
   passengerType: Prisma.PassengerCreateInput["passengerType"];
   notes?: string | null;
 }) {
+  assertPassengerTypeAllowed(input.passengerType as PassengerType);
   return prisma.passenger.create({
     data: {
       firstName: input.firstName,
@@ -1133,6 +1155,19 @@ export async function getItineraryDetail(id: string) {
       accommodations: { include: { mandir: true } },
       transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
       booking: { include: { allocations: { include: { passenger: true } } } },
+      refundEvents: {
+        orderBy: { refundedAt: "desc" },
+        include: {
+          recordedByUser: true,
+          allocations: {
+            include: {
+              bookingAllocation: {
+                include: { passenger: true },
+              },
+            },
+          },
+        },
+      },
       approvalRequests: { include: { requestedByUser: true, reviewedByUser: true }, orderBy: { requestedAt: "desc" } },
       externalSyncLinks: true,
     },
@@ -1191,7 +1226,20 @@ async function findTripDetailOrThrow(tx: Prisma.TransactionClient, id: string) {
       itineraryPassengers: { include: { passenger: true } },
       flightSegments: { orderBy: { segmentOrder: "asc" }, include: { departureAirport: true, arrivalAirport: true } },
       accommodations: { include: { mandir: true } },
-      booking: true,
+      booking: { include: { allocations: { include: { passenger: true } } } },
+      refundEvents: {
+        orderBy: { refundedAt: "desc" },
+        include: {
+          recordedByUser: true,
+          allocations: {
+            include: {
+              bookingAllocation: {
+                include: { passenger: true },
+              },
+            },
+          },
+        },
+      },
       transportTasks: { include: { airport: true, mandir: true, drivers: { include: { driver: true } } } },
       approvalRequests: { orderBy: { requestedAt: "desc" } },
       externalSyncLinks: true,
@@ -1280,8 +1328,10 @@ async function syncTripRelations(tx: Prisma.TransactionClient, itineraryId: stri
         (input.booking.totalCost !== null && input.booking.totalCost !== undefined)),
   );
 
+  let bookingRecord: { id: string; totalCost: Prisma.Decimal | null } | null = null;
+
   if (hasBooking && input.booking) {
-    await tx.booking.upsert({
+    bookingRecord = await tx.booking.upsert({
       where: { itineraryId },
       update: {
         confirmationNumber: input.booking.confirmationNumber ?? null,
@@ -1303,6 +1353,14 @@ async function syncTripRelations(tx: Prisma.TransactionClient, itineraryId: stri
     });
   } else {
     await tx.booking.deleteMany({ where: { itineraryId } });
+  }
+
+  if (bookingRecord) {
+    await syncBookingAllocationsForItinerary(tx, {
+      bookingId: bookingRecord.id,
+      passengerIds: input.passengerIds,
+      totalCost: bookingRecord.totalCost ? Number(bookingRecord.totalCost) : null,
+    });
   }
 
   const accommodationNotes = input.accommodation?.notes?.trim() ?? "";
@@ -1704,6 +1762,7 @@ export async function listDrivers(options?: { includeInactive?: boolean }) {
 export async function createDriver(input: {
   name: string;
   phone?: string | null;
+  profileType?: ProfileType | null;
   notes?: string | null;
   airportIds?: string[];
 }) {
@@ -1712,6 +1771,7 @@ export async function createDriver(input: {
       data: {
         name: input.name,
         phone: normalizeOptionalPhone(input.phone),
+        profileType: input.profileType ?? null,
         notes: input.notes ?? null,
       },
     });
@@ -1736,6 +1796,7 @@ export async function updateDriver(
   input: {
     name?: string;
     phone?: string | null;
+    profileType?: ProfileType | null;
     notes?: string | null;
     isActive?: boolean;
     airportIds?: string[];
@@ -1747,6 +1808,7 @@ export async function updateDriver(
       data: {
         name: input.name,
         phone: input.phone === undefined ? undefined : normalizeOptionalPhone(input.phone),
+        profileType: input.profileType,
         isActive: input.isActive,
         notes: input.notes,
       },
@@ -2412,16 +2474,18 @@ export async function createTripFromPublicSubmission(
     }
 
     const createdPassengers = await Promise.all(
-      input.passengers.map((passenger) =>
-        tx.passenger.create({
+      input.passengers.map((passenger) => {
+        const passengerType = passenger.passengerType ?? PassengerType.GUEST_SANTO;
+        assertPassengerTypeAllowed(passengerType as PassengerType);
+        return tx.passenger.create({
           data: {
             firstName: passenger.firstName,
             lastName: passenger.lastName,
             phone: normalizeOptionalPhone(passenger.phone ?? null),
-            passengerType: passenger.passengerType ?? PassengerType.GUEST_SANTO,
+            passengerType,
           },
-        }),
-      ),
+        });
+      }),
     );
 
     const itinerary = await tx.itinerary.create({
@@ -2474,6 +2538,8 @@ export async function syncGoogleSheetsSnapshot(input: GoogleSheetsSnapshotInput)
   }
 
   return prisma.$transaction(async (tx) => {
+    await consolidateLegacyExtraSeatPassengers(tx);
+
     const existingLinks = await tx.externalSyncLink.findMany({
       where: { provider: GOOGLE_SHEETS_SYNC_PROVIDER },
       include: {
@@ -2880,6 +2946,154 @@ function normalizeOptionalPhone(value?: string | null) {
   return normalized.length > 0 ? normalized : null;
 }
 
+async function ensureCanonicalExtraSeatPassenger(tx: Prisma.TransactionClient) {
+  const existing = await tx.passenger.findFirst({
+    where: {
+      isActive: true,
+      firstName: { equals: EXTRA_SEAT_FIRST_NAME, mode: Prisma.QueryMode.insensitive },
+      lastName: { equals: EXTRA_SEAT_LAST_NAME, mode: Prisma.QueryMode.insensitive },
+    },
+  });
+
+  if (existing) {
+    return existing;
+  }
+
+  return tx.passenger.create({
+    data: {
+      firstName: EXTRA_SEAT_FIRST_NAME,
+      lastName: EXTRA_SEAT_LAST_NAME,
+      passengerType: DEFAULT_SYNC_PASSENGER_TYPE,
+      isActive: true,
+      notes: "Canonical passenger for purchased extra seats.",
+    },
+  });
+}
+
+async function consolidateLegacyExtraSeatPassengers(tx: Prisma.TransactionClient) {
+  const canonical = await ensureCanonicalExtraSeatPassenger(tx);
+  const legacyPassengers = await tx.passenger.findMany({
+    where: {
+      id: { not: canonical.id },
+      isActive: true,
+      OR: [
+        { passengerType: PassengerType.EXTRA_SEAT },
+        {
+          AND: [
+            { firstName: { equals: EXTRA_SEAT_FIRST_NAME, mode: Prisma.QueryMode.insensitive } },
+            { lastName: { equals: EXTRA_SEAT_LAST_NAME, mode: Prisma.QueryMode.insensitive } },
+          ],
+        },
+      ],
+    },
+  });
+
+  for (const legacy of legacyPassengers) {
+    const itineraryLinks = await tx.itineraryPassenger.findMany({
+      where: { passengerId: legacy.id },
+      select: { id: true, itineraryId: true },
+    });
+
+    for (const link of itineraryLinks) {
+      const existing = await tx.itineraryPassenger.findFirst({
+        where: {
+          itineraryId: link.itineraryId,
+          passengerId: canonical.id,
+        },
+        select: { id: true },
+      });
+
+      if (existing) {
+        await tx.itineraryPassenger.delete({ where: { id: link.id } });
+      } else {
+        await tx.itineraryPassenger.update({
+          where: { id: link.id },
+          data: { passengerId: canonical.id },
+        });
+      }
+    }
+
+    const bookingAllocations = await tx.bookingAllocation.findMany({
+      where: { passengerId: legacy.id },
+      select: { id: true, bookingId: true, allocatedCost: true },
+    });
+
+    for (const allocation of bookingAllocations) {
+      const existing = await tx.bookingAllocation.findFirst({
+        where: {
+          bookingId: allocation.bookingId,
+          passengerId: canonical.id,
+        },
+        select: { id: true, allocatedCost: true },
+      });
+
+      if (existing) {
+        await tx.bookingAllocation.update({
+          where: { id: existing.id },
+          data: {
+            allocatedCost: new Prisma.Decimal(existing.allocatedCost).plus(allocation.allocatedCost),
+          },
+        });
+        await tx.bookingAllocation.delete({ where: { id: allocation.id } });
+      } else {
+        await tx.bookingAllocation.update({
+          where: { id: allocation.id },
+          data: { passengerId: canonical.id },
+        });
+      }
+    }
+
+    await tx.passenger.update({
+      where: { id: legacy.id },
+      data: {
+        isActive: false,
+        notes: [legacy.notes, `Consolidated into canonical Extra Seat passenger ${canonical.id}.`].filter(Boolean).join(" "),
+      },
+    });
+  }
+
+  return canonical;
+}
+
+function splitCostEvenly(totalCost: number, count: number) {
+  if (count <= 0) {
+    return [];
+  }
+
+  const cents = Math.round(totalCost * 100);
+  const base = Math.floor(cents / count);
+  const remainder = cents - base * count;
+
+  return Array.from({ length: count }, (_, index) => (base + (index < remainder ? 1 : 0)) / 100);
+}
+
+async function syncBookingAllocationsForItinerary(
+  tx: Prisma.TransactionClient,
+  input: {
+    bookingId: string;
+    passengerIds: string[];
+    totalCost: number | null;
+  },
+) {
+  await tx.bookingAllocation.deleteMany({
+    where: { bookingId: input.bookingId },
+  });
+
+  if (input.totalCost === null || input.passengerIds.length === 0) {
+    return;
+  }
+
+  const allocations = splitCostEvenly(input.totalCost, input.passengerIds.length);
+  await tx.bookingAllocation.createMany({
+    data: input.passengerIds.map((passengerId, index) => ({
+      bookingId: input.bookingId,
+      passengerId,
+      allocatedCost: new Prisma.Decimal(allocations[index] ?? 0),
+      isManualOverride: false,
+    })),
+  });
+}
+
 async function findAirportByCodeOrThrow(tx: Prisma.TransactionClient, code: string) {
   const airport = await tx.airport.findFirst({
     where: { code: normalizeSyncCode(code) },
@@ -2998,6 +3212,13 @@ async function ensurePassengerForGoogleSheetsSync(
   input: GoogleSheetsPassengerInput,
 ) {
   const normalizedInput = normalizeGoogleSheetsPassenger(input);
+  if (normalizedInput.isExtraSeat) {
+    return {
+      passenger: await ensureCanonicalExtraSeatPassenger(tx),
+      mode: "matched" as const,
+      matchStrategy: "exact_full" as const,
+    };
+  }
   const matched = await findPassengerBySyncedName(tx, normalizedInput);
   if (matched) {
     if (matched.strategy !== "exact_full") {
@@ -3502,8 +3723,6 @@ export type TravelerRefInput = {
   entityId: string;
 };
 
-const DEFAULT_AUTO_PASSENGER_TYPE = PassengerType.HARIBHAKTO;
-
 async function ensurePassengerUserLink(tx: Prisma.TransactionClient, input: { userId: string; passengerId: string }) {
   const existing = await tx.passengerUserLink.findFirst({
     where: { userId: input.userId },
@@ -3980,6 +4199,243 @@ export async function exportTrips() {
   });
 }
 
+function decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  return typeof value === "number" ? value : Number(value);
+}
+
+function buildProportionalRefundAllocations(totalAmount: number, allocations: Array<{ id: string; amount: number }>) {
+  if (allocations.length === 0) {
+    return [];
+  }
+
+  const totalBasis = allocations.reduce((sum, item) => sum + item.amount, 0);
+  if (totalBasis <= 0) {
+    return [];
+  }
+
+  const totalCents = Math.round(totalAmount * 100);
+  const raw = allocations.map((item) => {
+    const exact = (item.amount / totalBasis) * totalCents;
+    const cents = Math.floor(exact);
+    return {
+      id: item.id,
+      cents,
+      remainder: exact - cents,
+    };
+  });
+
+  let assigned = raw.reduce((sum, item) => sum + item.cents, 0);
+  for (const item of [...raw].sort((left, right) => right.remainder - left.remainder)) {
+    if (assigned >= totalCents) {
+      break;
+    }
+    item.cents += 1;
+    assigned += 1;
+  }
+
+  return raw.map((item) => ({
+    bookingAllocationId: item.id,
+    amount: item.cents / 100,
+  }));
+}
+
+export async function createRefundEvent(input: {
+  itineraryId: string;
+  amount: number;
+  refundedAt: string;
+  note?: string | null;
+  recordedByUserId: string;
+  passengerId?: string | null;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const itinerary = await tx.itinerary.findUniqueOrThrow({
+      where: { id: input.itineraryId },
+      include: {
+        booking: {
+          include: {
+            allocations: {
+              include: {
+                passenger: true,
+                refundAllocations: true,
+              },
+            },
+          },
+        },
+        itineraryPassengers: { include: { passenger: true } },
+      },
+    });
+
+    if (!itinerary.booking || itinerary.booking.totalCost === null) {
+      throw new Error("Refunds require a trip cost.");
+    }
+
+    if (itinerary.booking.allocations.length === 0) {
+      await syncBookingAllocationsForItinerary(tx, {
+        bookingId: itinerary.booking.id,
+        passengerIds: itinerary.itineraryPassengers.map((item) => item.passengerId),
+        totalCost: Number(itinerary.booking.totalCost),
+      });
+    }
+
+    const booking = await tx.booking.findUniqueOrThrow({
+      where: { id: itinerary.booking.id },
+      include: {
+        allocations: {
+          include: {
+            passenger: true,
+            refundAllocations: true,
+          },
+        },
+      },
+    });
+
+    const parsedAmount = Number(input.amount);
+    if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      throw new Error("Refund amount must be greater than zero.");
+    }
+
+    const refundableAllocations = booking.allocations.map((allocation) => {
+      const allocated = decimalToNumber(allocation.allocatedCost);
+      const refunded = allocation.refundAllocations.reduce((sum, item) => sum + decimalToNumber(item.amount), 0);
+      return {
+        id: allocation.id,
+        passengerId: allocation.passengerId,
+        allocated,
+        remaining: Math.max(0, allocated - refunded),
+      };
+    });
+
+    const targetAllocations = input.passengerId
+      ? refundableAllocations.filter((allocation) => allocation.passengerId === input.passengerId)
+      : refundableAllocations;
+
+    if (targetAllocations.length === 0) {
+      throw new Error("No refundable passenger allocation found.");
+    }
+
+    const remainingTotal = targetAllocations.reduce((sum, item) => sum + item.remaining, 0);
+    if (parsedAmount > remainingTotal + 0.0001) {
+      throw new Error("Refund amount exceeds the remaining refundable balance.");
+    }
+
+    const allocations = input.passengerId
+      ? [{ bookingAllocationId: targetAllocations[0].id, amount: parsedAmount }]
+      : buildProportionalRefundAllocations(
+          parsedAmount,
+          targetAllocations.map((item) => ({ id: item.id, amount: item.remaining })),
+        );
+
+    const refundEvent = await tx.refundEvent.create({
+      data: {
+        itineraryId: itinerary.id,
+        bookingId: booking.id,
+        amount: new Prisma.Decimal(parsedAmount),
+        refundedAt: new Date(input.refundedAt),
+        note: input.note ?? null,
+        recordedByUserId: input.recordedByUserId,
+      },
+    });
+
+    if (allocations.length > 0) {
+      await tx.refundAllocation.createMany({
+        data: allocations.map((allocation) => ({
+          refundEventId: refundEvent.id,
+          bookingAllocationId: allocation.bookingAllocationId,
+          amount: new Prisma.Decimal(allocation.amount),
+        })),
+      });
+    }
+
+    return tx.refundEvent.findUniqueOrThrow({
+      where: { id: refundEvent.id },
+      include: {
+        recordedByUser: true,
+        allocations: {
+          include: {
+            bookingAllocation: {
+              include: { passenger: true },
+            },
+          },
+        },
+      },
+    });
+  });
+}
+
+export async function listTripReports() {
+  const itineraries = await prisma.itinerary.findMany({
+    orderBy: { updatedAt: "desc" },
+    include: {
+      itineraryPassengers: { include: { passenger: true } },
+      flightSegments: { orderBy: { segmentOrder: "asc" }, include: { departureAirport: true, arrivalAirport: true } },
+      booking: {
+        include: {
+          allocations: {
+            include: { refundAllocations: true, passenger: true },
+          },
+        },
+      },
+      refundEvents: true,
+    },
+  });
+
+  return itineraries.map((itinerary) => {
+    const totalCost = decimalToNumber(itinerary.booking?.totalCost);
+    const totalRefunded = itinerary.refundEvents.reduce((sum, event) => sum + decimalToNumber(event.amount), 0);
+    const firstSegment = itinerary.flightSegments[0];
+    const lastSegment = itinerary.flightSegments[itinerary.flightSegments.length - 1] ?? firstSegment;
+
+    return {
+      itineraryId: itinerary.id,
+      route:
+        firstSegment && lastSegment
+          ? `${firstSegment.departureAirport.code} -> ${lastSegment.arrivalAirport.code}`
+          : "No route",
+      departureDate: firstSegment?.departureTimeLocal ?? null,
+      arrivalDate: lastSegment?.arrivalTimeLocal ?? null,
+      passengerCount: itinerary.itineraryPassengers.length,
+      totalCost,
+      totalRefunded,
+      netCost: totalCost - totalRefunded,
+      isArchived: itinerary.isArchived,
+    };
+  });
+}
+
+export async function listPassengerReports() {
+  const passengers = await prisma.passenger.findMany({
+    where: { isActive: true },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    include: {
+      itineraryPassengers: { include: { itinerary: true } },
+      bookingAllocations: {
+        include: { refundAllocations: true, booking: true },
+      },
+    },
+  });
+
+  return passengers.map((passenger) => {
+    const allocatedCost = passenger.bookingAllocations.reduce((sum, allocation) => sum + decimalToNumber(allocation.allocatedCost), 0);
+    const refundedAmount = passenger.bookingAllocations.reduce(
+      (sum, allocation) => sum + allocation.refundAllocations.reduce((inner, item) => inner + decimalToNumber(item.amount), 0),
+      0,
+    );
+
+    return {
+      passengerId: passenger.id,
+      passengerName: buildPassengerDisplayName(passenger),
+      tripCount: passenger.itineraryPassengers.length,
+      grossAllocatedCost: allocatedCost,
+      refundedAmount,
+      netCost: allocatedCost - refundedAmount,
+    };
+  });
+}
+
 export async function exportPassengers() {
   return prisma.passenger.findMany({
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -4117,7 +4573,6 @@ async function listScopedUsersForAirports(
       ? {
           role: UserRole.ADMIN,
           isActive: true,
-          telegramChatId: { not: null },
           adminAirports: {
             some: {
               airportId: {
@@ -4129,7 +4584,7 @@ async function listScopedUsersForAirports(
       : {
           role: UserRole.COORDINATOR,
           isActive: true,
-          telegramChatId: { not: null },
+          excludeFromCoordinatorMessages: false,
           coordinatorAirports: {
             some: {
               airportId: {
@@ -4246,6 +4701,30 @@ function formatDriverLine(driver: { label: string; name: string; phone?: string 
   return `${driver.label} - ${driver.name} (${formatPhoneLabel(driver.phone)})`;
 }
 
+function formatReminderPassengerName(input: { firstName?: string | null; lastName?: string | null }) {
+  return [input.firstName, input.lastName].filter(Boolean).join(" ").trim();
+}
+
+function formatPassengerReminderRows(
+  passengers: Array<{
+    firstName?: string | null;
+    lastName?: string | null;
+    phone?: string | null;
+  }>,
+) {
+  return passengers.map((passenger) => ({
+    name: formatReminderPassengerName(passenger),
+    phone: passenger.phone,
+  }));
+}
+
+function maybeAppendBookingReference(lines: string[], confirmationNumber?: string | null) {
+  const bookingReference = confirmationNumber?.trim();
+  if (bookingReference) {
+    lines.push(`Booking ID / PNR: ${bookingReference}`, "");
+  }
+}
+
 function buildFlightSummaryText(input: {
   changeLabel: string;
   route: string;
@@ -4255,10 +4734,12 @@ function buildFlightSummaryText(input: {
   passengers: Array<{ name: string; phone?: string | null }>;
   drivers: Array<{ label: string; name: string; phone?: string | null }>;
   accommodation?: string | null;
+  confirmationNumber?: string | null;
+  includeBookingReference?: boolean;
   coordinator?: { name?: string | null; phone?: string | null } | null;
   flightStatusUrl?: string | null;
 }) {
-  return [
+  const lines = [
     "Jai Swaminarayan,",
     "",
     `${input.changeLabel}`,
@@ -4271,6 +4752,13 @@ function buildFlightSummaryText(input: {
     `Departure: ${formatLocalDateTime(input.departureTimeLocal)}`,
     `Arrival: ${formatLocalDateTime(input.arrivalTimeLocal)}`,
     "",
+  ];
+
+  if (input.includeBookingReference) {
+    maybeAppendBookingReference(lines, input.confirmationNumber);
+  }
+
+  lines.push(
     "Passengers:",
     ...(input.passengers.length > 0 ? input.passengers.map(formatPassengerLine) : ["None"]),
     "",
@@ -4286,7 +4774,9 @@ function buildFlightSummaryText(input: {
     "",
     "Link to track the flight status:",
     input.flightStatusUrl || "Not available",
-  ].join("\n");
+  );
+
+  return lines.join("\n");
 }
 
 function buildTransportSummaryText(input: {
@@ -4342,10 +4832,13 @@ async function queueFlightChangeNotifications(
   const lastSegment = input.itinerary.flightSegments[input.itinerary.flightSegments.length - 1] ?? firstSegment;
   const route = input.itinerary.flightSegments.map((segment) => `${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`).join(" \u00B7 ");
   const flightLabel = input.itinerary.flightSegments.map((segment) => segment.flightNumber).join(", ") || "Not set";
-  const passengers = input.itinerary.itineraryPassengers.map((item) => ({
-    name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-    phone: item.passenger.phone,
-  }));
+  const passengers = formatPassengerReminderRows(
+    input.itinerary.itineraryPassengers.map((item) => ({
+      firstName: item.passenger.firstName,
+      lastName: item.passenger.lastName,
+      phone: item.passenger.phone,
+    })),
+  );
   const drivers = input.itinerary.transportTasks.flatMap((task) =>
     task.drivers.map((entry) => ({
       label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
@@ -4410,10 +4903,7 @@ async function queueTransportChangeNotifications(
     listScopedUsersForAirports(tx, UserRole.ADMIN, [input.task.airport.id]),
     listScopedUsersForAirports(tx, UserRole.COORDINATOR, [input.task.airport.id]),
   ]);
-  const passengers = input.passengers.map((passenger) => ({
-    name: `${passenger.firstName} ${passenger.lastName}`,
-    phone: passenger.phone,
-  }));
+  const passengers = formatPassengerReminderRows(input.passengers);
   const drivers = input.task.drivers.map((entry) => ({
     label: input.task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
     name: entry.driver.name,
@@ -4696,6 +5186,7 @@ export async function evaluateReminderRules() {
             include: {
               itinerary: {
                 include: {
+                  booking: true,
                   itineraryPassengers: {
                     include: {
                       passenger: {
@@ -4730,6 +5221,17 @@ export async function evaluateReminderRules() {
                 continue;
               }
 
+              const renderedText = renderReminderTemplate(rule.template, {
+                passenger_name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+                flight_number: segment.flightNumber,
+                departure_airport: segment.departureAirport.code,
+                arrival_airport: segment.arrivalAirport.code,
+                booking_reference: segment.itinerary.booking?.confirmationNumber ?? "",
+              });
+              const passengerRuleText = segment.itinerary.booking?.confirmationNumber
+                ? `${renderedText}\n\nBooking ID / PNR: ${segment.itinerary.booking.confirmationNumber}`
+                : renderedText;
+
               await queueReminderRun(tx, {
                 ruleId: rule.id,
                 entityType: "FlightSegment",
@@ -4740,8 +5242,65 @@ export async function evaluateReminderRules() {
                 recipientPhone,
                 scheduledFor: segment.departureTimeUtc,
                 payload: {
+                  text: passengerRuleText,
+                },
+              });
+            }
+          }
+        }
+
+        if (
+          rule.trigger === ReminderTrigger.FLIGHT_DEPARTURE &&
+          (rule.audience === ReminderAudience.COORDINATOR || rule.audience === ReminderAudience.ADMIN)
+        ) {
+          const windowStart = new Date(now.getTime() + rule.offsetMinutes * 60 * 1000);
+          const windowEnd = new Date(windowStart.getTime() + 15 * 60 * 1000);
+
+          const segments = await tx.flightSegment.findMany({
+            where: {
+              departureTimeUtc: {
+                gte: windowStart,
+                lte: windowEnd,
+              },
+            },
+            include: {
+              departureAirport: true,
+              arrivalAirport: true,
+              itinerary: {
+                include: {
+                  itineraryPassengers: { include: { passenger: true } },
+                },
+              },
+            },
+          });
+
+          for (const segment of segments) {
+            const recipients = await listScopedUsersForAirports(
+              tx,
+              rule.audience === ReminderAudience.ADMIN ? UserRole.ADMIN : UserRole.COORDINATOR,
+              [segment.departureAirportId, segment.arrivalAirportId],
+            );
+
+            for (const user of recipients) {
+              await queueReminderRun(tx, {
+                ruleId: rule.id,
+                entityType: "FlightSegment",
+                entityId: `${segment.id}:${user.id}`,
+                deliveryChannel:
+                  rule.channel === ReminderChannel.SMS
+                    ? NotificationChannel.SMS
+                    : rule.channel === ReminderChannel.INTERNAL
+                      ? NotificationChannel.INTERNAL
+                      : NotificationChannel.TELEGRAM,
+                recipientUserId: user.id,
+                recipientChatId: rule.channel === ReminderChannel.TELEGRAM ? user.telegramChatId : null,
+                recipientPhone: rule.channel === ReminderChannel.SMS ? user.phone : null,
+                scheduledFor: segment.departureTimeUtc,
+                payload: {
                   text: renderReminderTemplate(rule.template, {
-                    passenger_name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+                    passenger_name: segment.itinerary.itineraryPassengers
+                      .map((item) => `${item.passenger.firstName} ${item.passenger.lastName}`)
+                      .join(", "),
                     flight_number: segment.flightNumber,
                     departure_airport: segment.departureAirport.code,
                     arrival_airport: segment.arrivalAirport.code,
@@ -4867,6 +5426,7 @@ async function queueBuiltInScheduledNotifications() {
               },
             },
             accommodations: { include: { mandir: true } },
+            booking: true,
             createdByUser: true,
             transportTasks: { include: { drivers: { include: { driver: true } } } },
           },
@@ -4880,10 +5440,13 @@ async function queueBuiltInScheduledNotifications() {
         listScopedUsersForAirports(tx, UserRole.COORDINATOR, [segment.departureAirportId]),
       ]);
 
-      const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
-        name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-        phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
-      }));
+      const passengerRows = formatPassengerReminderRows(
+        segment.itinerary.itineraryPassengers.map((item) => ({
+          firstName: item.passenger.firstName,
+          lastName: item.passenger.lastName,
+          phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
+        })),
+      );
       const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
         task.drivers.map((entry) => ({
           label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
@@ -4893,7 +5456,7 @@ async function queueBuiltInScheduledNotifications() {
       );
       const accommodation =
         segment.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" \u00B7 ") || null;
-      const text = buildFlightSummaryText({
+      const staffText = buildFlightSummaryText({
         changeLabel: "48 hour flight reminder",
         route: `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`,
         flightLabel: segment.flightNumber,
@@ -4914,6 +5477,29 @@ async function queueBuiltInScheduledNotifications() {
           departureTimeLocal: segment.departureTimeLocal,
         }),
       });
+      const passengerText = buildFlightSummaryText({
+        changeLabel: "48 hour flight reminder",
+        route: `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`,
+        flightLabel: segment.flightNumber,
+        departureTimeLocal: segment.departureTimeLocal,
+        arrivalTimeLocal: segment.arrivalTimeLocal,
+        passengers: passengerRows,
+        drivers: driverRows,
+        accommodation,
+        confirmationNumber: segment.itinerary.booking?.confirmationNumber ?? null,
+        includeBookingReference: true,
+        coordinator: segment.itinerary.createdByUser
+          ? {
+              name: segment.itinerary.createdByUser.name || `${segment.itinerary.createdByUser.firstName} ${segment.itinerary.createdByUser.lastName}`.trim(),
+              phone: segment.itinerary.createdByUser.phone,
+            }
+          : null,
+        flightStatusUrl: buildFlightStatusUrl({
+          airline: segment.airline,
+          flightNumber: segment.flightNumber,
+          departureTimeLocal: segment.departureTimeLocal,
+        }),
+      });
 
       for (const user of [...admins, ...coordinators]) {
         await createQueuedNotification(tx, {
@@ -4922,7 +5508,7 @@ async function queueBuiltInScheduledNotifications() {
           recipientUserId: user.id,
           recipientChatId: user.telegramChatId,
           dedupeKey: `builtin:48h:telegram:${segment.id}:${user.id}`,
-          payload: { text },
+          payload: { text: staffText },
         });
       }
 
@@ -4933,7 +5519,7 @@ async function queueBuiltInScheduledNotifications() {
           recipientPassengerId: item.passenger.id,
           recipientPhone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
           dedupeKey: `builtin:48h:sms:passenger:${segment.id}:${item.passenger.id}`,
-          payload: { text },
+          payload: { text: passengerText },
         });
       }
 
@@ -4945,7 +5531,7 @@ async function queueBuiltInScheduledNotifications() {
             recipientDriverId: entry.driver.id,
             recipientPhone: entry.driver.phone,
             dedupeKey: `builtin:48h:sms:driver:${segment.id}:${entry.driver.id}`,
-            payload: { text },
+            payload: { text: staffText },
           });
         }
       }
@@ -4976,10 +5562,13 @@ async function queueBuiltInScheduledNotifications() {
         taskType: task.taskType,
         airportCode: task.airport.code,
         scheduledTime: task.scheduledTimeLocal,
-        passengers: task.itinerary.itineraryPassengers.map((item) => ({
-          name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-          phone: item.passenger.phone,
-        })),
+        passengers: formatPassengerReminderRows(
+          task.itinerary.itineraryPassengers.map((item) => ({
+            firstName: item.passenger.firstName,
+            lastName: item.passenger.lastName,
+            phone: item.passenger.phone,
+          })),
+        ),
         drivers: task.drivers.map((entry) => ({
           label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
           name: entry.driver.name,
@@ -5029,10 +5618,13 @@ async function queueBuiltInScheduledNotifications() {
         taskType: task.taskType,
         airportCode: task.airport.code,
         scheduledTime: task.scheduledTimeLocal,
-        passengers: task.itinerary.itineraryPassengers.map((item) => ({
-          name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-          phone: item.passenger.phone,
-        })),
+        passengers: formatPassengerReminderRows(
+          task.itinerary.itineraryPassengers.map((item) => ({
+            firstName: item.passenger.firstName,
+            lastName: item.passenger.lastName,
+            phone: item.passenger.phone,
+          })),
+        ),
         drivers: task.drivers.map((entry) => ({
           label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
           name: entry.driver.name,
@@ -5178,6 +5770,7 @@ export async function queueOneOffFlightReminder(input: {
               },
             },
             accommodations: { include: { mandir: true } },
+            booking: true,
             createdByUser: true,
             transportTasks: { include: { drivers: { include: { driver: true } } } },
           },
@@ -5189,10 +5782,13 @@ export async function queueOneOffFlightReminder(input: {
       throw new Error("Flight segment not found.");
     }
 
-    const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
-      name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-      phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
-    }));
+    const passengerRows = formatPassengerReminderRows(
+      segment.itinerary.itineraryPassengers.map((item) => ({
+        firstName: item.passenger.firstName,
+        lastName: item.passenger.lastName,
+        phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
+      })),
+    );
     const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
       task.drivers.map((entry) => ({
         label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
@@ -5206,9 +5802,7 @@ export async function queueOneOffFlightReminder(input: {
         .filter(Boolean)
         .join(" \u00B7 ") || null;
 
-    const text =
-      input.message?.trim() ||
-      buildFlightSummaryText({
+    const defaultStaffText = buildFlightSummaryText({
         changeLabel: "Flight reminder",
         route: `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`,
         flightLabel: segment.flightNumber,
@@ -5229,6 +5823,32 @@ export async function queueOneOffFlightReminder(input: {
           departureTimeLocal: segment.departureTimeLocal,
         }),
       });
+    const defaultPassengerText = buildFlightSummaryText({
+      changeLabel: "Flight reminder",
+      route: `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`,
+      flightLabel: segment.flightNumber,
+      departureTimeLocal: segment.departureTimeLocal,
+      arrivalTimeLocal: segment.arrivalTimeLocal,
+      passengers: passengerRows,
+      drivers: driverRows,
+      accommodation,
+      confirmationNumber: segment.itinerary.booking?.confirmationNumber ?? null,
+      includeBookingReference: true,
+      coordinator: segment.itinerary.createdByUser
+        ? {
+            name: segment.itinerary.createdByUser.name || `${segment.itinerary.createdByUser.firstName} ${segment.itinerary.createdByUser.lastName}`.trim(),
+            phone: segment.itinerary.createdByUser.phone,
+          }
+        : null,
+      flightStatusUrl: buildFlightStatusUrl({
+        airline: segment.airline,
+        flightNumber: segment.flightNumber,
+        departureTimeLocal: segment.departureTimeLocal,
+      }),
+    });
+    const customText = input.message?.trim() || null;
+    const passengerText = customText || defaultPassengerText;
+    const staffText = customText || defaultStaffText;
 
     const minuteBucket = Math.floor(Date.now() / 60_000);
 
@@ -5246,7 +5866,7 @@ export async function queueOneOffFlightReminder(input: {
           recipientPassengerId: passenger.id,
           recipientChatId: chatId,
           dedupeKey: `oneof:${segment.id}:telegram:${passenger.id}:${minuteBucket}`,
-          payload: { text },
+          payload: { text: passengerText },
         });
         if (result) queued++;
       }
@@ -5259,7 +5879,7 @@ export async function queueOneOffFlightReminder(input: {
           recipientPassengerId: passenger.id,
           recipientPhone: phone,
           dedupeKey: `oneof:${segment.id}:sms:${passenger.id}:${minuteBucket}`,
-          payload: { text },
+          payload: { text: passengerText },
         });
         if (result) queued++;
       }
@@ -5274,13 +5894,13 @@ export async function queueOneOffFlightReminder(input: {
             recipientDriverId: entry.driver.id,
             recipientPhone: entry.driver.phone,
             dedupeKey: `oneof:${segment.id}:driver:${entry.driver.id}:${minuteBucket}`,
-            payload: { text },
+            payload: { text: staffText },
           });
           if (result) queued++;
         }
       }
     }
 
-    return { queued, text };
+    return { queued, text: passengerText };
   });
 }

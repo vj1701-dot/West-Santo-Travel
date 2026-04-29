@@ -35,7 +35,7 @@ function formatDateTime(value: Date | null | undefined) {
 }
 
 function formatPassengerName(user: { firstName: string; lastName: string }) {
-  return [user.lastName, user.firstName].filter(Boolean).join(", ").trim();
+  return [user.lastName, user.firstName].filter(Boolean).join(" ").trim();
 }
 
 function getParamArray(value: string | string[] | undefined) {

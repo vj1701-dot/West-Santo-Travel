@@ -218,6 +218,8 @@ async function main() {
 
   await prisma.notificationLog.deleteMany();
   await prisma.auditLog.deleteMany();
+  await prisma.refundAllocation.deleteMany();
+  await prisma.refundEvent.deleteMany();
   await prisma.transportTaskStatusHistory.deleteMany();
   await prisma.transportTaskDriver.deleteMany();
   await prisma.transportTask.deleteMany();
@@ -320,6 +322,13 @@ async function main() {
         legalName: "Swami B",
         phone: "5553335555",
         passengerType: PassengerType.GUEST_SANTO,
+      },
+    }),
+    prisma.passenger.create({
+      data: {
+        firstName: "Extra",
+        lastName: "Seat",
+        passengerType: PassengerType.HARIBHAKTO,
       },
     }),
   ]);

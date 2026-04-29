@@ -1,4 +1,4 @@
-import { UserRole } from "@prisma/client";
+import { ProfileType, UserRole } from "@prisma/client";
 import { createUser, listUsers } from "@west-santo/data";
 import { z } from "zod";
 
@@ -11,6 +11,8 @@ const createUserSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   role: z.nativeEnum(UserRole),
+  profileType: z.nativeEnum(ProfileType).nullable().optional(),
+  excludeFromCoordinatorMessages: z.boolean().optional(),
   airportIds: z.array(z.string().uuid()).optional(),
 });
 

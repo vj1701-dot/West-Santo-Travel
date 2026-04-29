@@ -10,7 +10,7 @@ export function AdminExportConsole() {
     <section className="panel stack">
       <div className="panel-head">
         <div>
-          <p className="eyebrow">Admin Export</p>
+          <p className="eyebrow">Exports</p>
           <h2>Download operational datasets</h2>
         </div>
       </div>

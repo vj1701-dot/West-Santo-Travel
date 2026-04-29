@@ -16,7 +16,7 @@ type SubmissionPayload = {
     firstName: string;
     lastName: string;
     phone?: string | null;
-    passengerType?: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | "EXTRA_SEAT";
+    passengerType?: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO";
   }>;
   segments?: Array<{
     airline: string;

@@ -80,7 +80,7 @@ The product replaces ad hoc coordination across spreadsheets, chat threads, and 
 ### 5. Notifications And Background Processing
 
 - Reminder rules must be configurable in the app and evaluated by a scheduler service.
-- Notifications are queued in the database and delivered by Telegram for admins/coordinators and Twilio SMS for passengers/drivers.
+- Notifications are queued in the database and delivered by Telegram for admins/coordinators and Twilio MMS for phone-based recipients.
 - The Telegram bot must support linking a chat to an existing record by phone number or shared contact, accepting phone numbers in any common format.
 - Admins keep full web visibility, but Telegram notifications and `/upcoming` stay scoped to their assigned airports.
 - The bot must tolerate scaffold mode when `TELEGRAM_BOT_TOKEN` is not configured.
@@ -110,7 +110,7 @@ Implemented now:
 - CSV exports for trips, passengers, drivers, and users
 - Built-in notification workflows plus configurable reminder rule CRUD
 - Telegram phone/contact linking, `/upcoming`, and queued notification dispatch
-- Twilio SMS dispatch for passenger and driver notifications
+- Twilio MMS dispatch for passenger and driver notifications
 - Google Sheets snapshot sync with automatic flight updates and review-required traveler or driver roster changes on existing synced trips
 
 Partially implemented or intentionally deferred:
@@ -144,7 +144,7 @@ Partially implemented or intentionally deferred:
 - `bootstrap`: one-shot Prisma schema push and seed step
 - `web`: Next.js app on `http://localhost:3000`
 - `bot`: Telegram worker that links accounts and sends queued notifications
-- `scheduler`: periodic reminder-rule scanner, built-in workflow scheduler, and Twilio SMS dispatcher
+- `scheduler`: periodic reminder-rule scanner, built-in workflow scheduler, and Twilio MMS dispatcher
 
 ### Web App Surface
 
@@ -282,7 +282,7 @@ Minimum values to review in `.env`:
 - `GOOGLE_CLIENT_SECRET`
 - `ADMIN_EMAIL` and `ADMIN_PASSWORD` for seeded admin credentials
 - `TELEGRAM_BOT_TOKEN` if you want a live bot
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER` if you want live SMS delivery
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER`, and `TWILIO_MMS_MEDIA_URL` if you want live Twilio MMS delivery
 - `GOOGLE_SHEETS_SYNC_SECRET` if you want Google Apps Script to sync a sheet into live trips
 - `AIRPORT_IMPORT_URL` if you want to override the default OurAirports feed during seed/bootstrap
 - `MANDIR_IMPORT_ENABLED` if you want to skip the BAPS mandir import during seed/bootstrap
@@ -295,6 +295,7 @@ Recommended local values:
 - `BETTER_AUTH_URL=http://localhost:3000`
 - `NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000`
 - `TWILIO_FROM_NUMBER=+15551234567`
+- `TWILIO_MMS_MEDIA_URL=https://example.com/twilio-mms-placeholder.png`
 - `AIRPORT_IMPORT_ENABLED=true`
 - `MANDIR_IMPORT_ENABLED=true`
 

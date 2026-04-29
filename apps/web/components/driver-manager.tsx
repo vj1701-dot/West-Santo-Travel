@@ -17,6 +17,7 @@ type DriverRecord = {
   id: string;
   name: string;
   phone: string | null;
+  profileType: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | null;
   notes: string | null;
   telegramChatId: string | null;
   telegramUsername: string | null;
@@ -27,6 +28,7 @@ type DriverRecord = {
 type FormState = {
   name: string;
   phone: string;
+  profileType: "" | "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO";
   notes: string;
   airportIds: string[];
   chatId: string;
@@ -36,6 +38,7 @@ type FormState = {
 const emptyForm: FormState = {
   name: "",
   phone: "",
+  profileType: "",
   notes: "",
   airportIds: [],
   chatId: "",
@@ -46,6 +49,7 @@ function toFormState(driver: DriverRecord): FormState {
   return {
     name: driver.name,
     phone: driver.phone ?? "",
+    profileType: driver.profileType ?? "",
     notes: driver.notes ?? "",
     airportIds: driver.airportIds,
     chatId: "",
@@ -79,6 +83,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
     if (!query) return drivers;
     return drivers.filter((driver) =>
       [driver.name, driver.phone ?? "", driver.notes ?? "", driver.airportCodes.join(" ")]
+        .concat(` ${driver.profileType ?? ""}`)
         .join(" ")
         .toLowerCase()
         .includes(query),
@@ -123,6 +128,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
     const ok = await submitJson("/api/drivers", "POST", {
       name: formState.name,
       phone: formState.phone || null,
+      profileType: formState.profileType || null,
       notes: formState.notes || null,
       airportIds: formState.airportIds,
     });
@@ -139,6 +145,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
     await submitJson(`/api/drivers/${editingDriver.id}`, "PATCH", {
       name: formState.name,
       phone: formState.phone || null,
+      profileType: formState.profileType || null,
       notes: formState.notes || null,
       airportIds: formState.airportIds,
     });
@@ -263,6 +270,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
         <thead>
           <tr>
             <th>Driver</th>
+            <th>Type</th>
             <th>Airports</th>
             <th>Telegram</th>
             <th>Actions</th>
@@ -275,6 +283,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
                 <strong>{driver.name}</strong>
                 <div className="muted-inline">{driver.phone ?? "No phone"}</div>
               </td>
+              <td>{driver.profileType ? driver.profileType.replace(/_/g, " ") : "Not set"}</td>
               <td>{driver.airportCodes.join(", ") || "None"}</td>
               <td>{driver.telegramChatId ? "Linked" : "Pending"}</td>
               <td>
@@ -302,7 +311,7 @@ export function DriverManager({ drivers, airports }: { drivers: DriverRecord[]; 
           ))}
           {filteredDrivers.length === 0 ? (
             <tr>
-              <td colSpan={4}>No drivers found.</td>
+              <td colSpan={5}>No drivers found.</td>
             </tr>
           ) : null}
         </tbody>
@@ -332,6 +341,15 @@ function DriverFields({
           <input value={formState.phone} onChange={(event) => onChange("phone", event.target.value)} />
         </label>
       </div>
+      <label className="field">
+        <span>Type</span>
+        <select value={formState.profileType} onChange={(event) => onChange("profileType", event.target.value as FormState["profileType"])}>
+          <option value="">Not set</option>
+          <option value="WEST_SANTO">West Santo</option>
+          <option value="GUEST_SANTO">Guest Santo</option>
+          <option value="HARIBHAKTO">Haribhakt</option>
+        </select>
+      </label>
       <AirportMultiSelect
         airports={airportChoices}
         label="Assigned airports"

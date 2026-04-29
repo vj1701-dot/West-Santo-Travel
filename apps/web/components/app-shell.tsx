@@ -45,7 +45,7 @@ const navSections = [
     items: [
       { href: "/reminders", label: "Reminders", roles: ["ADMIN", "COORDINATOR"] },
       { href: "/approvals", label: "Approvals", roles: ["ADMIN", "COORDINATOR"] },
-      { href: "/admin", label: "Admin", roles: ["ADMIN"] },
+      { href: "/admin", label: "Reports", roles: ["ADMIN"] },
     ],
   },
 ];
@@ -65,6 +65,7 @@ function initialsForUser(user: CurrentUser) {
 
 function formatBreadcrumb(pathname: string) {
   if (pathname === "/") return "Overview";
+  if (pathname === "/admin") return "Reports";
   return pathname
     .split("/")
     .filter(Boolean)

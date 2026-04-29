@@ -12,6 +12,7 @@ test("normalizeGoogleSheetsPassenger strips extra-seat aliases", () => {
   const exst = normalizeGoogleSheetsPassenger({ firstName: "EXSTDivyacharandas", lastName: "Sadhu" });
   const exts = normalizeGoogleSheetsPassenger({ firstName: "EXTS Divyacharandas", lastName: "Sadhu" });
   const xs = normalizeGoogleSheetsPassenger({ firstName: "XSDivyacharandas", lastName: "Sadhu" });
+  const middle = normalizeGoogleSheetsPassenger({ firstName: "Divyacharandas xs", lastName: "Sadhu" });
 
   assert.deepEqual(exst, {
     firstName: "Divyacharandas",
@@ -22,8 +23,10 @@ test("normalizeGoogleSheetsPassenger strips extra-seat aliases", () => {
   });
   assert.equal(exts.primaryDisplayName, "Divyacharandas Sadhu");
   assert.equal(xs.primaryDisplayName, "Divyacharandas Sadhu");
+  assert.equal(middle.primaryDisplayName, "Divyacharandas Sadhu");
   assert.equal(exts.isExtraSeat, true);
   assert.equal(xs.isExtraSeat, true);
+  assert.equal(middle.isExtraSeat, true);
 });
 
 test("dedupeGoogleSheetsPassengers collapses base and extra-seat alias rows", () => {

@@ -48,7 +48,7 @@ function toFormState(passenger: PassengerRecord): FormState {
     legalName: passenger.legalName ?? "",
     email: passenger.email ?? "",
     phone: passenger.phone ?? "",
-    passengerType: passenger.passengerType,
+    passengerType: passenger.passengerType === "EXTRA_SEAT" ? "HARIBHAKTO" : passenger.passengerType,
     notes: passenger.notes ?? "",
     chatId: "",
     telegramUsername: passenger.telegramUsername ?? "",
@@ -371,7 +371,6 @@ function PassengerFields({
             <option value="WEST_SANTO">West Santo</option>
             <option value="GUEST_SANTO">Guest Santo</option>
             <option value="HARIBHAKTO">Haribhakto</option>
-            <option value="EXTRA_SEAT">Extra Seat</option>
           </select>
         </label>
       </div>

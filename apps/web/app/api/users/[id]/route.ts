@@ -1,4 +1,4 @@
-import { UserRole } from "@prisma/client";
+import { ProfileType, UserRole } from "@prisma/client";
 import { updateUser } from "@west-santo/data";
 import { z } from "zod";
 
@@ -11,6 +11,8 @@ const updateUserSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   role: z.nativeEnum(UserRole).optional(),
+  profileType: z.nativeEnum(ProfileType).nullable().optional(),
+  excludeFromCoordinatorMessages: z.boolean().optional(),
   isActive: z.boolean().optional(),
   airportIds: z.array(z.string().uuid()).optional(),
 });

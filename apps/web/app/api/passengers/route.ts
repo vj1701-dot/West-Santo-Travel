@@ -1,4 +1,3 @@
-import { PassengerType } from "@prisma/client";
 import { createPassenger, listPassengerOptions, listPassengers } from "@west-santo/data";
 import { z } from "zod";
 
@@ -11,7 +10,7 @@ const createPassengerSchema = z.object({
   legalName: z.string().nullable().optional(),
   email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
-  passengerType: z.nativeEnum(PassengerType),
+  passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO"]),
   notes: z.string().nullable().optional(),
 });
 

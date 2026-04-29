@@ -9,7 +9,7 @@ const passengerSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   phone: z.string().nullable().optional(),
-  passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO", "EXTRA_SEAT"]),
+  passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO"]),
 });
 
 const segmentSchema = z.object({

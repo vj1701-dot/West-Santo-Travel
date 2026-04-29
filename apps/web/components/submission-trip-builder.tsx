@@ -14,7 +14,7 @@ type PassengerDraft = {
   firstName: string;
   lastName: string;
   phone: string;
-  passengerType: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | "EXTRA_SEAT";
+  passengerType: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO";
 };
 
 type DriverOption = {
@@ -409,7 +409,6 @@ export function SubmissionTripBuilder({
                         <option value="WEST_SANTO">West Santo</option>
                         <option value="GUEST_SANTO">Guest Santo</option>
                         <option value="HARIBHAKTO">Haribhakto</option>
-                        <option value="EXTRA_SEAT">Extra Seat</option>
                       </select>
                     </label>
                   </div>

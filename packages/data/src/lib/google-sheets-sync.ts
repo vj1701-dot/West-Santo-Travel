@@ -6,7 +6,7 @@ export type GoogleSheetsPassengerLike = {
   isExtraSeat?: boolean | null;
 };
 
-const EXTRA_SEAT_PREFIX_PATTERN = /^(?:exst|exts|xs)\s*/i;
+const EXTRA_SEAT_ALIAS_PATTERN = /(?:exst|exts|xs)/i;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
 function normalizeText(value?: string | null) {
@@ -43,12 +43,16 @@ function splitDisplayName(displayName: string) {
   };
 }
 
-function stripExtraSeatPrefix(displayName: string) {
+function stripExtraSeatAliases(displayName: string) {
   const normalized = normalizeText(displayName).replace(/\s+/g, " ");
-  const stripped = normalized.replace(EXTRA_SEAT_PREFIX_PATTERN, "").trim();
+  const words = normalized.split(" ").filter(Boolean);
+  const cleanedWords = words
+    .map((word) => word.replace(/^(?:exst|exts|xs)+/i, "").trim())
+    .filter((word) => !/^(?:exst|exts|xs)$/i.test(word) && word.length > 0);
+  const stripped = cleanedWords.join(" ").trim();
 
   return {
-    isExtraSeat: stripped.length > 0 && stripped !== normalized,
+    isExtraSeat: EXTRA_SEAT_ALIAS_PATTERN.test(normalized),
     primaryDisplayName: stripped || normalized,
   };
 }
@@ -57,7 +61,7 @@ export function normalizeGoogleSheetsPassenger(input: GoogleSheetsPassengerLike)
   const rawFirstName = normalizeText(input.firstName);
   const rawLastName = normalizeText(input.lastName);
   const rawDisplayName = normalizeText(input.rawDisplayName) || `${rawFirstName} ${rawLastName}`.trim();
-  const stripped = stripExtraSeatPrefix(rawDisplayName);
+  const stripped = stripExtraSeatAliases(rawDisplayName);
   const providedPrimaryDisplayName = normalizeText(input.primaryDisplayName);
   const primaryDisplayName = providedPrimaryDisplayName || stripped.primaryDisplayName || rawDisplayName;
   const splitName = splitDisplayName(primaryDisplayName);

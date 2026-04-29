@@ -37,6 +37,8 @@ export default async function UsersPage() {
           email: user.email,
           phone: user.phone,
           role: user.role,
+          profileType: user.profileType,
+          excludeFromCoordinatorMessages: user.excludeFromCoordinatorMessages,
           isActive: user.isActive,
           telegramChatId: user.telegramChatId,
           telegramUsername: user.telegramUsername,
