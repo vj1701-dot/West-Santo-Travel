@@ -204,65 +204,10 @@ strong {
   letter-spacing: -0.01em;
 }
 
-.role-switch {
-  padding: 14px 10px 10px;
-  border-bottom: 1px solid var(--border);
-}
-
-.rlabel {
-  margin-bottom: 8px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-500);
-}
-
-.role-seg {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  padding: 4px;
-  background: rgba(255, 255, 255, 0.76);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  box-shadow: var(--shadow-xs);
-}
-
-.role-seg button,
-.role-seg a,
 .btn-ghost,
 .button-secondary,
 button {
   font: inherit;
-}
-
-.role-seg a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  min-width: 0;
-  border-radius: 10px;
-  background: transparent;
-  border: 0;
-  color: var(--ink-700);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  outline: none;
-  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
-}
-
-.role-seg a:hover {
-  background: #fff8e1;
-  color: #8a6a12;
-}
-
-.role-seg a.active {
-  background: var(--ink-900);
-  color: #fff7d6;
-  box-shadow: inset 3px 0 0 #d4af37, var(--shadow-xs);
 }
 
 .sb-nav {
@@ -982,6 +927,10 @@ button:hover {
   align-items: start;
 }
 
+.trip-builder-layout--single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .trip-builder-sidebar,
 .drawer-panel {
   position: sticky;
@@ -1178,13 +1127,22 @@ button:hover {
 
 .overview-filter-toolbar {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
+.overview-filter-toolbar .eyebrow {
+  margin: 0;
+}
+
 .overview-filter-toolbar__actions {
   align-items: center;
+  gap: 10px;
+}
+
+.overview-filter-toolbar__actions .button-secondary {
+  min-height: 38px;
 }
 
 .overview-filter-grid {
@@ -1235,47 +1193,91 @@ button:hover {
   border-color: var(--accent-200);
 }
 
-.itinerary-grid {
+.boarding-pass-grid {
   display: grid;
   grid-template-columns: 1fr;
+  gap: 18px;
+}
+
+.boarding-pass-grid--old {
   gap: 14px;
 }
 
-.itinerary-card {
+.boarding-pass-card {
+  position: relative;
   display: grid;
-  gap: 14px;
-  padding: 16px;
-  border: 1px solid #cfd6e3;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
-  box-shadow: 0 14px 28px -28px rgba(15, 23, 42, 0.85);
+  gap: 16px;
+  overflow: hidden;
+  padding: 18px;
+  border: 1px solid #c6d1df;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(231, 244, 255, 0.9), transparent 34%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 20px 34px -30px rgba(15, 23, 42, 0.9);
 }
 
-.itinerary-card--focused {
+.boarding-pass-card::before,
+.boarding-pass-card::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #eef3f8;
+  transform: translateY(-50%);
+}
+
+.boarding-pass-card::before {
+  left: -11px;
+}
+
+.boarding-pass-card::after {
+  right: -11px;
+}
+
+.boarding-pass-card--focused {
   border-color: #d4af37;
-  box-shadow: 0 18px 34px -28px rgba(168, 126, 24, 0.85);
-  background: linear-gradient(180deg, #fffdf7 0%, #ffffff 100%);
+  box-shadow: 0 20px 36px -30px rgba(168, 126, 24, 0.88);
 }
 
-.itinerary-card__header {
+.boarding-pass-card--muted {
+  background:
+    radial-gradient(circle at top left, rgba(246, 246, 246, 0.95), transparent 36%),
+    linear-gradient(180deg, #fcfcfd 0%, #f4f6f8 100%);
+}
+
+.old-itineraries-section {
+  border-style: dashed;
+}
+
+.boarding-pass-card__route {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.itinerary-card__header h3 {
+.boarding-pass-card__route h3 {
   margin: 0;
+  color: var(--ink-900);
+  font-family: var(--font-display);
+  font-size: clamp(28px, 4vw, 36px);
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
 
-.itinerary-card__subtitle {
-  margin: 4px 0 0;
-  color: var(--ink-500);
-  font-size: 13px;
-  line-height: 1.45;
+.boarding-pass-card__eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.itinerary-card__actions {
+.boarding-pass-card__actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1283,23 +1285,68 @@ button:hover {
   gap: 8px;
 }
 
-.itinerary-card__timing {
+.boarding-pass-card__meta {
   min-width: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
 }
 
-.itinerary-card__timing-item {
-  display: grid;
-  gap: 3px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface-2);
+.boarding-pass-card__code {
+  color: var(--ink-900);
+  font-family: var(--font-display);
+  font-size: clamp(32px, 5vw, 42px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
 }
 
-.itinerary-card__timing-item span {
+.boarding-pass-card__code--arrival {
+  text-align: right;
+}
+
+.boarding-pass-card__flight {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.boarding-pass-card__flight span {
+  color: var(--ink-500);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.boarding-pass-card__flight strong {
+  color: var(--ink-900);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.boarding-pass-card__divider {
+  height: 1px;
+  border-top: 2px dashed #c7d1df;
+}
+
+.boarding-pass-card__timing {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.boarding-pass-card__timing-block {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(247, 250, 253, 0.9);
+  border: 1px solid #d7e0ea;
+}
+
+.boarding-pass-card__timing-block span {
   color: var(--ink-500);
   font-size: 11px;
   font-weight: 700;
@@ -1307,25 +1354,25 @@ button:hover {
   text-transform: uppercase;
 }
 
-.itinerary-card__timing-item strong {
+.boarding-pass-card__timing-block strong {
   color: var(--ink-900);
   font-size: 14px;
   line-height: 1.35;
 }
 
-.itinerary-card__details {
+.boarding-pass-card__details {
   display: grid;
   gap: 8px;
 }
 
-.itinerary-card__details p {
+.boarding-pass-card__details p {
   margin: 0;
   color: var(--ink-600);
   font-size: 13px;
   line-height: 1.5;
 }
 
-.itinerary-card__details strong {
+.boarding-pass-card__details strong {
   color: var(--ink-900);
 }
 
@@ -1785,7 +1832,7 @@ button:hover {
 
 @media (max-width: 900px) {
   .app-shell {
-    grid-template-columns: 184px minmax(0, 1fr);
+    grid-template-columns: 1fr;
   }
 
   .app-shell--sidebar-collapsed {
@@ -1793,9 +1840,18 @@ button:hover {
   }
 
   .sidebar {
-    display: flex;
+    position: fixed;
+    left: 0;
+    z-index: 30;
+    display: none;
     width: 184px;
+    max-width: calc(100vw - 56px);
     transition: transform 180ms ease, opacity 180ms ease, width 180ms ease;
+    box-shadow: 0 18px 40px -24px rgba(15, 23, 42, 0.65);
+  }
+
+  .app-shell--mobile-sidebar-open .sidebar {
+    display: flex;
   }
 
   .app-shell--sidebar-collapsed .sidebar {
@@ -1814,18 +1870,6 @@ button:hover {
 
   .sb-wordmark .name {
     font-size: 12px;
-  }
-
-  .role-switch {
-    padding: 12px 8px 8px;
-  }
-
-  .role-seg {
-    grid-template-columns: 1fr;
-  }
-
-  .role-seg a {
-    min-height: 30px;
   }
 
   .sb-nav {
@@ -1951,24 +1995,32 @@ button:hover {
     font-size: 32px;
   }
 
-  .itinerary-card__header,
+  .boarding-pass-card__route,
   .overview-filter-toolbar {
     flex-direction: column;
   }
 
-  .itinerary-card__actions,
+  .boarding-pass-card__actions,
   .overview-filter-toolbar__actions {
     justify-content: flex-start;
   }
 
-  .itinerary-card__timing {
+  .boarding-pass-card__meta,
+  .boarding-pass-card__timing {
     grid-template-columns: 1fr;
+  }
+
+  .boarding-pass-card__code,
+  .boarding-pass-card__code--arrival,
+  .boarding-pass-card__flight {
+    justify-items: start;
+    text-align: left;
   }
 }
 
 @media (min-width: 900px) {
   .overview-trip-grid,
-  .itinerary-grid {
+  .boarding-pass-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

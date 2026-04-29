@@ -3,6 +3,7 @@ import { listAirports, listItineraries, listPassengerItineraries, listPassengers
 
 import { AppShell } from "@/components/app-shell";
 import { OverviewFilters } from "@/components/overview-filters";
+import { getAirlineBrand } from "@/lib/airlines";
 import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,12 @@ type OverviewSearchParams = {
 
 type ItineraryRecord = Awaited<ReturnType<typeof listItineraries>>[number];
 
+type UpcomingTripRecord = {
+  itinerary: ItineraryRecord;
+  primarySegment: ItineraryRecord["flightSegments"][number];
+  tripDate: Date;
+};
+
 function formatDateTime(value: Date | null | undefined) {
   if (!value) return "Not scheduled";
   return new Intl.DateTimeFormat("en-US", {
@@ -27,8 +34,8 @@ function formatDateTime(value: Date | null | undefined) {
   }).format(value);
 }
 
-function fullName(user: { firstName: string; lastName: string }) {
-  return `${user.firstName} ${user.lastName}`.trim();
+function formatPassengerName(user: { firstName: string; lastName: string }) {
+  return [user.lastName, user.firstName].filter(Boolean).join(", ").trim();
 }
 
 function getParamArray(value: string | string[] | undefined) {
@@ -66,8 +73,67 @@ function routeSummary(segment: ItineraryRecord["flightSegments"][number]) {
   return `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`;
 }
 
+function formatFlightLabel(segment: ItineraryRecord["flightSegments"][number]) {
+  const airlineCode = getAirlineBrand(segment.airline).code;
+  const normalizedFlightNumber = segment.flightNumber.trim().toUpperCase();
+
+  if (normalizedFlightNumber.startsWith(airlineCode)) {
+    return normalizedFlightNumber;
+  }
+
+  return `${airlineCode}${normalizedFlightNumber.replace(/\s+/g, "")}`;
+}
+
 function flightHeadline(segment: ItineraryRecord["flightSegments"][number]) {
-  return `${segment.airline} ${segment.flightNumber} \u00B7 ${routeSummary(segment)}`;
+  return `${formatFlightLabel(segment)} \u00B7 ${routeSummary(segment)}`;
+}
+
+function startOfToday() {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+function tripDateForItinerary(itinerary: ItineraryRecord) {
+  const primarySegment = itinerary.flightSegments[0];
+
+  if (!primarySegment) {
+    return null;
+  }
+
+  return new Date(
+    primarySegment.departureTimeLocal.getFullYear(),
+    primarySegment.departureTimeLocal.getMonth(),
+    primarySegment.departureTimeLocal.getDate(),
+  );
+}
+
+function buildUpcomingTrips(itineraries: ItineraryRecord[]) {
+  const today = startOfToday();
+
+  return itineraries
+    .map((itinerary) => {
+      const primarySegment = itinerary.flightSegments[0];
+      const tripDate = tripDateForItinerary(itinerary);
+
+      if (!primarySegment || !tripDate) {
+        return null;
+      }
+
+      return {
+        itinerary,
+        primarySegment,
+        tripDate,
+      };
+    })
+    .filter((trip): trip is UpcomingTripRecord => Boolean(trip))
+    .filter((trip) => trip.tripDate >= today)
+    .sort((left, right) => {
+      if (left.tripDate.getTime() !== right.tripDate.getTime()) {
+        return left.tripDate.getTime() - right.tripDate.getTime();
+      }
+
+      return left.primarySegment.departureTimeLocal.getTime() - right.primarySegment.departureTimeLocal.getTime();
+    });
 }
 
 function deepLinkHref(itineraryId: string) {
@@ -113,20 +179,7 @@ export default async function OverviewPage({
         })
   );
 
-  const upcomingTrips = itineraries
-    .map((itinerary) => {
-      const nextSegment =
-        itinerary.flightSegments
-          .filter((segment) => segment.departureTimeUtc >= new Date())
-          .sort((a, b) => a.departureTimeUtc.getTime() - b.departureTimeUtc.getTime())[0] ?? itinerary.flightSegments[0];
-
-      return {
-        itinerary,
-        nextSegment,
-      };
-    })
-    .filter((item): item is { itinerary: ItineraryRecord; nextSegment: ItineraryRecord["flightSegments"][number] } => Boolean(item.nextSegment))
-    .sort((a, b) => a.nextSegment.departureTimeUtc.getTime() - b.nextSegment.departureTimeUtc.getTime());
+  const upcomingTrips = buildUpcomingTrips(itineraries);
 
   return (
     <AppShell currentUser={currentUser} effectiveRole={effectiveRole}>
@@ -143,17 +196,14 @@ export default async function OverviewPage({
             clearHref={buildClearHref(previewRole)}
             passengers={passengers.map((passenger) => ({
               id: passenger.id,
-              label: `${passenger.firstName} ${passenger.lastName}`,
+              label: formatPassengerName(passenger),
               detail: passenger.passengerType.replace(/_/g, " "),
             }))}
             previewRole={previewRole}
             selectedAirportIds={selectedAirportIds.filter((airportId) => visibleAirports.some((airport) => airport.id === airportId))}
             selectedPassengerIds={selectedPassengerIds.filter((passengerId) => passengers.some((passenger) => passenger.id === passengerId))}
           />
-          <UpcomingTripsSection
-            title="Upcoming Trips"
-            trips={upcomingTrips.slice(0, effectiveRole === "COORDINATOR" ? 6 : 4)}
-          />
+          <UpcomingTripsSection title="Upcoming Travels" trips={upcomingTrips} />
         </>
       ) : (
         <PassengerOverview trips={upcomingTrips} />
@@ -167,10 +217,7 @@ function UpcomingTripsSection({
   trips,
 }: {
   title: string;
-  trips: Array<{
-    itinerary: ItineraryRecord;
-    nextSegment: ItineraryRecord["flightSegments"][number];
-  }>;
+  trips: UpcomingTripRecord[];
 }) {
   return (
     <section className="dashboard-card stack">
@@ -179,19 +226,16 @@ function UpcomingTripsSection({
           <p className="eyebrow">Travel</p>
           <h3>{title}</h3>
         </div>
-        <Link className="button-secondary" href="/itineraries">
-          View all
-        </Link>
       </div>
       {trips.length === 0 ? (
         <p className="notes">No upcoming trips match the current filters.</p>
       ) : (
         <div className="overview-trip-grid">
-          {trips.map(({ itinerary, nextSegment }) => (
+          {trips.map(({ itinerary, primarySegment }) => (
             <Link className="trip-card overview-trip-link" href={deepLinkHref(itinerary.id)} key={itinerary.id}>
               <div className="row-card__title">
                 <div>
-                  <h3>{flightHeadline(nextSegment)}</h3>
+                  <h3>{flightHeadline(primarySegment)}</h3>
                 </div>
                 <span
                   className={`pill ${itinerary.status === "CONFIRMED" ? "confirmed" : itinerary.status === "PENDING_APPROVAL" ? "pending" : ""}`}
@@ -201,13 +245,13 @@ function UpcomingTripsSection({
               </div>
               <div className="overview-trip-details">
                 <p>
-                  <strong>Departure:</strong> {formatDateTime(nextSegment.departureTimeLocal)}
+                  <strong>Departure:</strong> {formatDateTime(primarySegment.departureTimeLocal)}
                 </p>
                 <p>
-                  <strong>Arrival:</strong> {formatDateTime(nextSegment.arrivalTimeLocal)}
+                  <strong>Arrival:</strong> {formatDateTime(primarySegment.arrivalTimeLocal)}
                 </p>
                 <p>
-                  <strong>Passengers:</strong> {itinerary.itineraryPassengers.map((item) => fullName(item.passenger)).join(", ")}
+                  <strong>Passengers:</strong> {itinerary.itineraryPassengers.map((item) => formatPassengerName(item.passenger)).join("; ")}
                 </p>
                 <p>
                   <strong>Pickup:</strong> {formatDriverAssignments(itinerary, "PICKUP")}
@@ -227,10 +271,7 @@ function UpcomingTripsSection({
 function PassengerOverview({
   trips,
 }: {
-  trips: Array<{
-    itinerary: ItineraryRecord;
-    nextSegment: ItineraryRecord["flightSegments"][number];
-  }>;
+  trips: UpcomingTripRecord[];
 }) {
   const featured = trips[0];
 
@@ -250,7 +291,7 @@ function PassengerOverview({
       <div className="row-card__title">
         <div>
           <p className="eyebrow">Your next trip</p>
-          <h3>{flightHeadline(featured.nextSegment)}</h3>
+          <h3>{flightHeadline(featured.primarySegment)}</h3>
         </div>
         <Link className="button-secondary" href={deepLinkHref(featured.itinerary.id)}>
           Open trip
@@ -258,16 +299,16 @@ function PassengerOverview({
       </div>
       <div className="overview-trip-details">
         <p>
-          <strong>Airline:</strong> {featured.nextSegment.airline}
+          <strong>Airline:</strong> {getAirlineBrand(featured.primarySegment.airline).code}
         </p>
         <p>
-          <strong>Departure:</strong> {formatDateTime(featured.nextSegment.departureTimeLocal)}
+          <strong>Departure:</strong> {formatDateTime(featured.primarySegment.departureTimeLocal)}
         </p>
         <p>
-          <strong>Arrival:</strong> {formatDateTime(featured.nextSegment.arrivalTimeLocal)}
+          <strong>Arrival:</strong> {formatDateTime(featured.primarySegment.arrivalTimeLocal)}
         </p>
         <p>
-          <strong>Passengers:</strong> {featured.itinerary.itineraryPassengers.map((item) => fullName(item.passenger)).join(", ")}
+          <strong>Passengers:</strong> {featured.itinerary.itineraryPassengers.map((item) => formatPassengerName(item.passenger)).join("; ")}
         </p>
         <p>
           <strong>Pickup:</strong> {formatDriverAssignments(featured.itinerary, "PICKUP")}

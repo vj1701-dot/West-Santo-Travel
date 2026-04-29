@@ -47,6 +47,7 @@ export default async function AddFlightPage() {
           label: `${user.firstName} ${user.lastName}`.trim() || user.email,
           detail: [user.role, user.email, user.phone].filter(Boolean).join(" · "),
         }))}
+        showSummary={false}
         submitLabel="Save trip"
         successPath="/itineraries"
       />

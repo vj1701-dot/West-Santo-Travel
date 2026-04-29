@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useRef, useState, type FormEvent, type PropsWithChildren } from "react";
 import { ChevronRight, Menu, Search } from "lucide-react";
 
@@ -50,12 +50,6 @@ const navSections = [
   },
 ];
 
-function buildPreviewRoleHref(pathname: string, searchParams: { toString(): string }, nextRole: string) {
-  const next = new URLSearchParams(searchParams.toString());
-  next.set("previewRole", nextRole);
-  return `${pathname}?${next.toString()}`;
-}
-
 function formatRole(role: string | null | undefined) {
   if (!role) return "Guest";
   if (role === "COORDINATOR") return "Coordinator";
@@ -89,8 +83,9 @@ export function AppShell({
 }: PropsWithChildren<{ currentUser?: CurrentUser; effectiveRole?: string | null }>) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -129,6 +124,27 @@ export function AppShell({
     [searchQuery, visibleSections],
   );
   const combinedSearchResults = searchResults.length > 0 ? searchResults : pageSearchResults;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 900px)");
+
+    function syncViewport() {
+      const nextIsMobile = mediaQuery.matches;
+      setIsMobileViewport(nextIsMobile);
+
+      if (!nextIsMobile) {
+        setIsMobileSidebarOpen(false);
+      }
+    }
+
+    syncViewport();
+    mediaQuery.addEventListener("change", syncViewport);
+    return () => mediaQuery.removeEventListener("change", syncViewport);
+  }, []);
+
+  useEffect(() => {
+    setIsMobileSidebarOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     if (!deferredSearchQuery) {
@@ -190,8 +206,21 @@ export function AppShell({
     }
   }
 
+  function toggleSidebar() {
+    if (isMobileViewport) {
+      setIsMobileSidebarOpen((current) => !current);
+      return;
+    }
+
+    setIsSidebarCollapsed((current) => !current);
+  }
+
+  const isSidebarVisible = isMobileViewport ? isMobileSidebarOpen : !isSidebarCollapsed;
+
   return (
-    <div className={`app-shell${isSidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}`}>
+    <div
+      className={`app-shell${!isMobileViewport && isSidebarCollapsed ? " app-shell--sidebar-collapsed" : ""}${isMobileSidebarOpen ? " app-shell--mobile-sidebar-open" : ""}`}
+    >
       <aside className="sidebar">
         {/* SVG filters for the nav button glow effect */}
         <svg style={{ position: "absolute", width: 0, height: 0, overflow: "hidden" }} aria-hidden="true">
@@ -209,33 +238,12 @@ export function AppShell({
         </svg>
 
         <div className="sb-brand">
-          {/* Logo source: https://www.baps.org/images/baps_logo.svg */}
-          <img alt="BAPS logo" className="sb-logo" src="/images/baps-logo.svg" />
+          {/* Logo source: https://upload.wikimedia.org/wikipedia/en/thumb/4/4a/Baps_logo.svg/1280px-Baps_logo.svg.png */}
+          <img alt="BAPS logo" className="sb-logo" src="/images/baps-logo.png" />
           <div className="sb-wordmark">
             <div className="name">West Santo Travel</div>
           </div>
         </div>
-
-        {currentUser?.role === "ADMIN" ? (
-          <div className="role-switch">
-            <div className="rlabel">Viewing as</div>
-            <div className="role-seg">
-              {[
-                { key: "ADMIN", label: "Admin" },
-                { key: "COORDINATOR", label: "Coord" },
-                { key: "PASSENGER", label: "Passenger" },
-              ].map((role) => (
-                <Link
-                  key={role.key}
-                  className={activeRole === role.key ? "active" : ""}
-                  href={buildPreviewRoleHref(pathname, searchParams, role.key)}
-                >
-                  {role.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-        ) : null}
 
         <nav className="sb-nav">
           {visibleSections.map((section) => (
@@ -271,9 +279,9 @@ export function AppShell({
           <button
             className="btn-ghost"
             type="button"
-            aria-label={isSidebarCollapsed ? "Show sidebar" : "Hide sidebar"}
-            aria-expanded={!isSidebarCollapsed}
-            onClick={() => setIsSidebarCollapsed((current) => !current)}
+            aria-label={isSidebarVisible ? "Hide sidebar" : "Show sidebar"}
+            aria-expanded={isSidebarVisible}
+            onClick={toggleSidebar}
           >
             <Menu />
           </button>

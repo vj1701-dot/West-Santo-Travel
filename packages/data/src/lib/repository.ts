@@ -19,7 +19,13 @@ import {
 } from "@prisma/client";
 import { createHash } from "node:crypto";
 
-import { formatPassengerNames, localDateTimeStringToDate, summarizeDashboard, zonedLocalDateTimeToUtc } from "@west-santo/core";
+import {
+  buildGoogleFlightStatusUrl,
+  formatPassengerNames,
+  localDateTimeStringToDate,
+  summarizeDashboard,
+  zonedLocalDateTimeToUtc,
+} from "@west-santo/core";
 
 import { classifyTelegramLinkInput, dedupeGoogleSheetsPassengers, normalizeGoogleSheetsPassenger } from "./google-sheets-sync";
 import { prisma } from "./prisma";
@@ -1181,6 +1187,7 @@ async function findTripDetailOrThrow(tx: Prisma.TransactionClient, id: string) {
   return tx.itinerary.findUniqueOrThrow({
     where: { id },
     include: {
+      createdByUser: true,
       itineraryPassengers: { include: { passenger: true } },
       flightSegments: { orderBy: { segmentOrder: "asc" }, include: { departureAirport: true, arrivalAirport: true } },
       accommodations: { include: { mandir: true } },
@@ -1849,6 +1856,7 @@ export async function assignDriversToTransportTask(input: {
       include: {
         airport: true,
         mandir: true,
+        createdByUser: true,
         drivers: { include: { driver: true } },
       },
     });
@@ -1903,6 +1911,7 @@ export async function updateTransportTaskStatus(input: {
       include: {
         airport: true,
         mandir: true,
+        createdByUser: true,
         drivers: { include: { driver: true } },
       },
     });
@@ -4136,27 +4145,148 @@ async function listScopedUsersForAirports(
   });
 }
 
+function formatLocalDate(value?: Date | null) {
+  if (!value) {
+    return "Not set";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(value);
+}
+
+function formatLocalTime(value?: Date | null) {
+  if (!value) {
+    return "Not set";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(value);
+}
+
+function formatLocalDateTime(value?: Date | null) {
+  if (!value) {
+    return "Not set";
+  }
+
+  return `${formatLocalDate(value)} ${formatLocalTime(value)}`;
+}
+
+function formatPhoneLabel(phone?: string | null) {
+  return phone?.trim() || "No phone listed";
+}
+
+function extractFlightNumberParts(input: { airline?: string | null; flightNumber?: string | null }) {
+  const normalizedFlightNumber = input.flightNumber?.trim().toUpperCase() || "";
+  const compactFlightNumber = normalizedFlightNumber.replace(/\s+/g, "");
+  const prefixedMatch = compactFlightNumber.match(/^([A-Z]+)(\d.*)$/);
+
+  if (prefixedMatch) {
+    return {
+      airlineCode: prefixedMatch[1],
+      flightNumber: prefixedMatch[2],
+      flightNumberFull: `${prefixedMatch[1]}${prefixedMatch[2]}`,
+    };
+  }
+
+  const airlineCode =
+    input.airline
+      ?.trim()
+      .split(/\s+/)
+      .map((part) => part[0] ?? "")
+      .join("")
+      .replace(/[^A-Z]/gi, "")
+      .toUpperCase() || "";
+
+  return {
+    airlineCode,
+    flightNumber: compactFlightNumber,
+    flightNumberFull: `${airlineCode}${compactFlightNumber}`.trim() || compactFlightNumber,
+  };
+}
+
+function buildFlightStatusUrl(input: {
+  airline?: string | null;
+  flightNumber?: string | null;
+  departureTimeLocal?: Date | null;
+}) {
+  const parts = extractFlightNumberParts(input);
+
+  if (!parts.flightNumberFull || !input.departureTimeLocal) {
+    return null;
+  }
+
+  const departureDate = [
+    input.departureTimeLocal.getUTCFullYear(),
+    String(input.departureTimeLocal.getUTCMonth() + 1).padStart(2, "0"),
+    String(input.departureTimeLocal.getUTCDate()).padStart(2, "0"),
+  ].join("-");
+  const departureTime = [
+    String(input.departureTimeLocal.getUTCHours()).padStart(2, "0"),
+    String(input.departureTimeLocal.getUTCMinutes()).padStart(2, "0"),
+  ].join(":");
+
+  return buildGoogleFlightStatusUrl({
+    airlineCode: parts.airlineCode,
+    flightNumber: parts.flightNumber,
+    departureDate,
+    departureTime,
+  });
+}
+
+function formatPassengerLine(passenger: { name: string; phone?: string | null }) {
+  return `${passenger.name} - ${formatPhoneLabel(passenger.phone)}`;
+}
+
+function formatDriverLine(driver: { label: string; name: string; phone?: string | null }) {
+  return `${driver.label} - ${driver.name} (${formatPhoneLabel(driver.phone)})`;
+}
+
 function buildFlightSummaryText(input: {
   changeLabel: string;
   route: string;
-  flightNumbers: string[];
+  flightLabel: string;
+  departureTimeLocal?: Date | null;
+  arrivalTimeLocal?: Date | null;
   passengers: Array<{ name: string; phone?: string | null }>;
-  drivers: Array<{ name: string; taskType?: string | null }>;
+  drivers: Array<{ label: string; name: string; phone?: string | null }>;
   accommodation?: string | null;
+  coordinator?: { name?: string | null; phone?: string | null } | null;
+  flightStatusUrl?: string | null;
 }) {
-  const passengerDetails = input.passengers
-    .map((passenger) => `${passenger.name}${passenger.phone ? ` (${passenger.phone})` : ""}`)
-    .join(", ");
-  const driverDetails = input.drivers.map((driver) => driver.taskType ? `${driver.name} (${driver.taskType})` : driver.name).join(", ");
-
   return [
+    "Jai Swaminarayan,",
+    "",
     `${input.changeLabel}`,
+    "",
+    "Flight details:",
+    "",
     `Route: ${input.route}`,
-    `Flights: ${input.flightNumbers.join(", ") || "Not set"}`,
-    passengerDetails ? `Passengers: ${passengerDetails}` : null,
-    driverDetails ? `Drivers: ${driverDetails}` : null,
-    input.accommodation ? `Accommodation: ${input.accommodation}` : null,
-  ].filter(Boolean).join("\n");
+    `Flight: ${input.flightLabel || "Not set"}`,
+    "",
+    `Departure: ${formatLocalDateTime(input.departureTimeLocal)}`,
+    `Arrival: ${formatLocalDateTime(input.arrivalTimeLocal)}`,
+    "",
+    "Passengers:",
+    ...(input.passengers.length > 0 ? input.passengers.map(formatPassengerLine) : ["None"]),
+    "",
+    "Transport Sevak:",
+    ...(input.drivers.length > 0 ? input.drivers.map(formatDriverLine) : ["None"]),
+    "",
+    "Accommodation:",
+    input.accommodation || "Not set",
+    "",
+    input.coordinator?.name || input.coordinator?.phone
+      ? `If you have any questions, reach out to ${input.coordinator?.name || "the coordinator"} - ${formatPhoneLabel(input.coordinator?.phone)}`
+      : "If you have any questions, reach out to the coordinator.",
+    "",
+    "Link to track the flight status:",
+    input.flightStatusUrl || "Not available",
+  ].join("\n");
 }
 
 function buildTransportSummaryText(input: {
@@ -4165,24 +4295,29 @@ function buildTransportSummaryText(input: {
   airportCode: string;
   scheduledTime?: Date | null;
   passengers: Array<{ name: string; phone?: string | null }>;
-  drivers: Array<{ name: string; phone?: string | null }>;
+  drivers: Array<{ label: string; name: string; phone?: string | null }>;
+  coordinator?: { name?: string | null; phone?: string | null } | null;
 }) {
-  const scheduled =
-    input.scheduledTime
-      ? new Intl.DateTimeFormat("en-US", {
-          month: "short",
-          day: "numeric",
-          hour: "numeric",
-          minute: "2-digit",
-        }).format(input.scheduledTime)
-      : "Not scheduled";
-
   return [
+    "Jai Swaminarayan,",
+    "",
     `${input.changeLabel}`,
-    `${input.taskType} at ${input.airportCode}`,
-    `Scheduled: ${scheduled}`,
-    `Passengers: ${input.passengers.map((passenger) => `${passenger.name}${passenger.phone ? ` (${passenger.phone})` : ""}`).join(", ") || "None"}`,
-    `Drivers: ${input.drivers.map((driver) => `${driver.name}${driver.phone ? ` (${driver.phone})` : ""}`).join(", ") || "None"}`,
+    "",
+    "Transport details:",
+    "",
+    `Task: ${input.taskType}`,
+    `Airport: ${input.airportCode}`,
+    `Scheduled: ${formatLocalDateTime(input.scheduledTime)}`,
+    "",
+    "Passengers:",
+    ...(input.passengers.length > 0 ? input.passengers.map(formatPassengerLine) : ["None"]),
+    "",
+    "Transport Sevak:",
+    ...(input.drivers.length > 0 ? input.drivers.map(formatDriverLine) : ["None"]),
+    "",
+    input.coordinator?.name || input.coordinator?.phone
+      ? `If you have any questions, reach out to ${input.coordinator?.name || "the coordinator"} - ${formatPhoneLabel(input.coordinator?.phone)}`
+      : "If you have any questions, reach out to the coordinator.",
   ].join("\n");
 }
 
@@ -4203,23 +4338,42 @@ async function queueFlightChangeNotifications(
     listScopedUsersForAirports(tx, UserRole.COORDINATOR, airportIds),
   ]);
 
-  const route = input.itinerary.flightSegments.map((segment) => `${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`).join(" · ");
-  const flightNumbers = input.itinerary.flightSegments.map((segment) => segment.flightNumber);
+  const firstSegment = input.itinerary.flightSegments[0];
+  const lastSegment = input.itinerary.flightSegments[input.itinerary.flightSegments.length - 1] ?? firstSegment;
+  const route = input.itinerary.flightSegments.map((segment) => `${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`).join(" \u00B7 ");
+  const flightLabel = input.itinerary.flightSegments.map((segment) => segment.flightNumber).join(", ") || "Not set";
   const passengers = input.itinerary.itineraryPassengers.map((item) => ({
     name: `${item.passenger.firstName} ${item.passenger.lastName}`,
     phone: item.passenger.phone,
   }));
   const drivers = input.itinerary.transportTasks.flatMap((task) =>
-    task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
+    task.drivers.map((entry) => ({
+      label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
+      name: entry.driver.name,
+      phone: entry.driver.phone,
+    })),
   );
-  const accommodation = input.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" · ") || null;
+  const accommodation = input.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" \u00B7 ") || null;
   const text = buildFlightSummaryText({
     changeLabel: input.changeLabel,
     route,
-    flightNumbers,
+    flightLabel,
+    departureTimeLocal: firstSegment?.departureTimeLocal,
+    arrivalTimeLocal: lastSegment?.arrivalTimeLocal,
     passengers,
     drivers,
     accommodation,
+    coordinator: input.itinerary.createdByUser
+      ? {
+          name: input.itinerary.createdByUser.name || `${input.itinerary.createdByUser.firstName} ${input.itinerary.createdByUser.lastName}`.trim(),
+          phone: input.itinerary.createdByUser.phone,
+        }
+      : null,
+    flightStatusUrl: buildFlightStatusUrl({
+      airline: firstSegment?.airline,
+      flightNumber: firstSegment?.flightNumber,
+      departureTimeLocal: firstSegment?.departureTimeLocal,
+    }),
   });
 
   for (const user of [...admins, ...coordinators]) {
@@ -4240,6 +4394,7 @@ async function queueTransportChangeNotifications(
       include: {
         airport: true;
         mandir: true;
+        createdByUser: true;
         drivers: {
           include: {
             driver: true;
@@ -4260,6 +4415,7 @@ async function queueTransportChangeNotifications(
     phone: passenger.phone,
   }));
   const drivers = input.task.drivers.map((entry) => ({
+    label: input.task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
     name: entry.driver.name,
     phone: entry.driver.phone,
   }));
@@ -4270,6 +4426,12 @@ async function queueTransportChangeNotifications(
     scheduledTime: input.task.scheduledTimeLocal,
     passengers,
     drivers,
+    coordinator: input.task.createdByUser
+      ? {
+          name: input.task.createdByUser.name || `${input.task.createdByUser.firstName} ${input.task.createdByUser.lastName}`.trim(),
+          phone: input.task.createdByUser.phone,
+        }
+      : null,
   });
 
   for (const user of [...admins, ...coordinators]) {
@@ -4705,6 +4867,7 @@ async function queueBuiltInScheduledNotifications() {
               },
             },
             accommodations: { include: { mandir: true } },
+            createdByUser: true,
             transportTasks: { include: { drivers: { include: { driver: true } } } },
           },
         },
@@ -4719,20 +4882,37 @@ async function queueBuiltInScheduledNotifications() {
 
       const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
         name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-        phone: item.passenger.phone,
+        phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
       }));
       const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
-        task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
+        task.drivers.map((entry) => ({
+          label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
+          name: entry.driver.name,
+          phone: entry.driver.phone,
+        })),
       );
       const accommodation =
-        segment.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" · ") || null;
+        segment.itinerary.accommodations.map((item) => item.notes ?? item.mandir?.name).filter(Boolean).join(" \u00B7 ") || null;
       const text = buildFlightSummaryText({
         changeLabel: "48 hour flight reminder",
-        route: `${segment.departureAirport.code} -> ${segment.arrivalAirport.code}`,
-        flightNumbers: [segment.flightNumber],
+        route: `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`,
+        flightLabel: segment.flightNumber,
+        departureTimeLocal: segment.departureTimeLocal,
+        arrivalTimeLocal: segment.arrivalTimeLocal,
         passengers: passengerRows,
         drivers: driverRows,
         accommodation,
+        coordinator: segment.itinerary.createdByUser
+          ? {
+              name: segment.itinerary.createdByUser.name || `${segment.itinerary.createdByUser.firstName} ${segment.itinerary.createdByUser.lastName}`.trim(),
+              phone: segment.itinerary.createdByUser.phone,
+            }
+          : null,
+        flightStatusUrl: buildFlightStatusUrl({
+          airline: segment.airline,
+          flightNumber: segment.flightNumber,
+          departureTimeLocal: segment.departureTimeLocal,
+        }),
       });
 
       for (const user of [...admins, ...coordinators]) {
@@ -4785,7 +4965,7 @@ async function queueBuiltInScheduledNotifications() {
       include: {
         airport: true,
         flightSegment: { include: { departureAirport: true, arrivalAirport: true } },
-        itinerary: { include: { itineraryPassengers: { include: { passenger: true } } } },
+        itinerary: { include: { itineraryPassengers: { include: { passenger: true } }, createdByUser: true } },
         drivers: { include: { driver: true } },
       },
     });
@@ -4800,7 +4980,17 @@ async function queueBuiltInScheduledNotifications() {
           name: `${item.passenger.firstName} ${item.passenger.lastName}`,
           phone: item.passenger.phone,
         })),
-        drivers: task.drivers.map((entry) => ({ name: entry.driver.name, phone: entry.driver.phone })),
+        drivers: task.drivers.map((entry) => ({
+          label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
+          name: entry.driver.name,
+          phone: entry.driver.phone,
+        })),
+        coordinator: task.itinerary.createdByUser
+          ? {
+              name: task.itinerary.createdByUser.name || `${task.itinerary.createdByUser.firstName} ${task.itinerary.createdByUser.lastName}`.trim(),
+              phone: task.itinerary.createdByUser.phone,
+            }
+          : null,
       });
 
       for (const entry of task.drivers) {
@@ -4828,7 +5018,7 @@ async function queueBuiltInScheduledNotifications() {
       },
       include: {
         airport: true,
-        itinerary: { include: { itineraryPassengers: { include: { passenger: true } } } },
+        itinerary: { include: { itineraryPassengers: { include: { passenger: true } }, createdByUser: true } },
         drivers: { include: { driver: true } },
       },
     });
@@ -4843,7 +5033,17 @@ async function queueBuiltInScheduledNotifications() {
           name: `${item.passenger.firstName} ${item.passenger.lastName}`,
           phone: item.passenger.phone,
         })),
-        drivers: task.drivers.map((entry) => ({ name: entry.driver.name, phone: entry.driver.phone })),
+        drivers: task.drivers.map((entry) => ({
+          label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
+          name: entry.driver.name,
+          phone: entry.driver.phone,
+        })),
+        coordinator: task.itinerary.createdByUser
+          ? {
+              name: task.itinerary.createdByUser.name || `${task.itinerary.createdByUser.firstName} ${task.itinerary.createdByUser.lastName}`.trim(),
+              phone: task.itinerary.createdByUser.phone,
+            }
+          : null,
       });
 
       for (const entry of task.drivers) {
@@ -4978,6 +5178,7 @@ export async function queueOneOffFlightReminder(input: {
               },
             },
             accommodations: { include: { mandir: true } },
+            createdByUser: true,
             transportTasks: { include: { drivers: { include: { driver: true } } } },
           },
         },
@@ -4990,29 +5191,45 @@ export async function queueOneOffFlightReminder(input: {
 
     const passengerRows = segment.itinerary.itineraryPassengers.map((item) => ({
       name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-      phone: item.passenger.phone,
+      phone: item.passenger.phone ?? item.passenger.userLinks[0]?.user.phone ?? null,
     }));
     const driverRows = segment.itinerary.transportTasks.flatMap((task) =>
-      task.drivers.map((entry) => ({ name: entry.driver.name, taskType: task.taskType })),
+      task.drivers.map((entry) => ({
+        label: task.taskType === TransportTaskType.PICKUP ? "Pickup" : "Dropoff",
+        name: entry.driver.name,
+        phone: entry.driver.phone,
+      })),
     );
     const accommodation =
       segment.itinerary.accommodations
         .map((item) => item.notes ?? item.mandir?.name)
         .filter(Boolean)
-        .join(" · ") || null;
+        .join(" \u00B7 ") || null;
 
     const text =
       input.message?.trim() ||
       buildFlightSummaryText({
         changeLabel: "Flight reminder",
-        route: `${segment.departureAirport.code} → ${segment.arrivalAirport.code}`,
-        flightNumbers: [segment.flightNumber],
+        route: `${segment.departureAirport.code} \u2192 ${segment.arrivalAirport.code}`,
+        flightLabel: segment.flightNumber,
+        departureTimeLocal: segment.departureTimeLocal,
+        arrivalTimeLocal: segment.arrivalTimeLocal,
         passengers: passengerRows,
         drivers: driverRows,
         accommodation,
+        coordinator: segment.itinerary.createdByUser
+          ? {
+              name: segment.itinerary.createdByUser.name || `${segment.itinerary.createdByUser.firstName} ${segment.itinerary.createdByUser.lastName}`.trim(),
+              phone: segment.itinerary.createdByUser.phone,
+            }
+          : null,
+        flightStatusUrl: buildFlightStatusUrl({
+          airline: segment.airline,
+          flightNumber: segment.flightNumber,
+          departureTimeLocal: segment.departureTimeLocal,
+        }),
       });
 
-    // Minute-level bucket so re-sends after 1 minute are allowed
     const minuteBucket = Math.floor(Date.now() / 60_000);
 
     let queued = 0;
@@ -5048,6 +5265,22 @@ export async function queueOneOffFlightReminder(input: {
       }
     }
 
-    return { queued };
+    for (const task of segment.itinerary.transportTasks) {
+      for (const entry of task.drivers) {
+        if (input.channel === "SMS" || input.channel === "TELEGRAM_SMS") {
+          const result = await createQueuedNotification(tx, {
+            notificationType: NotificationType.FLIGHT_REMINDER,
+            deliveryChannel: NotificationChannel.SMS,
+            recipientDriverId: entry.driver.id,
+            recipientPhone: entry.driver.phone,
+            dedupeKey: `oneof:${segment.id}:driver:${entry.driver.id}:${minuteBucket}`,
+            payload: { text },
+          });
+          if (result) queued++;
+        }
+      }
+    }
+
+    return { queued, text };
   });
 }

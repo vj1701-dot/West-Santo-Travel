@@ -90,6 +90,7 @@ type TripBuilderProps = {
   method?: "POST" | "PATCH";
   submitLabel?: string;
   successPath?: string;
+  showSummary?: boolean;
 };
 
 type SearchOption = {
@@ -178,6 +179,7 @@ export function TripBuilder({
   method = "POST",
   submitLabel = "Save trip",
   successPath = "/itineraries",
+  showSummary = true,
 }: TripBuilderProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -490,7 +492,7 @@ export function TripBuilder({
     <section className="stack">
       {message ? <div className="compact-card"><p>{message}</p></div> : null}
 
-      <div className="trip-builder-layout">
+      <div className={`trip-builder-layout${showSummary ? "" : " trip-builder-layout--single-column"}`}>
         <div className="stack">
         <Accordion type="multiple" defaultValue={["passengers", "segments", "booking", "transport", "accommodation"]}>
           <AccordionItem value="passengers">
@@ -867,28 +869,30 @@ export function TripBuilder({
         </div>
         </div>
 
-        <aside className="trip-builder-sidebar stack">
-          <div className="trip-summary-card">
-            <div className="row-card__title">
-              <div>
-                <p className="eyebrow">Summary</p>
-                <h3>Live preview</h3>
+        {showSummary ? (
+          <aside className="trip-builder-sidebar stack">
+            <div className="trip-summary-card">
+              <div className="row-card__title">
+                <div>
+                  <p className="eyebrow">Summary</p>
+                  <h3>Live preview</h3>
+                </div>
+                <span className="pill">{segments.length} segments</span>
               </div>
-              <span className="pill">{segments.length} segments</span>
+              <SummaryRow label="Travelers" value={`${totalTravelers}`} />
+              <SummaryRow label="Route" value={routeSummary} />
+              <SummaryRow label="Booking ID" value={bookingId.trim() || "Pending"} />
+              <SummaryRow label="Transport entries" value={`${totalTransportEntries}`} />
+              <SummaryRow label="Trip note" value={tripNote.trim() || "No note"} />
+              <div className="compact-card compact-card--highlighted">
+                <p className="eyebrow" style={{ marginBottom: "6px" }}>Current workflow</p>
+                <p className="notes">
+                  The redesign is applied here while keeping your existing trip builder behavior, routes, and API flow.
+                </p>
+              </div>
             </div>
-            <SummaryRow label="Travelers" value={`${totalTravelers}`} />
-            <SummaryRow label="Route" value={routeSummary} />
-            <SummaryRow label="Booking ID" value={bookingId.trim() || "Pending"} />
-            <SummaryRow label="Transport entries" value={`${totalTransportEntries}`} />
-            <SummaryRow label="Trip note" value={tripNote.trim() || "No note"} />
-            <div className="compact-card compact-card--highlighted">
-              <p className="eyebrow" style={{ marginBottom: "6px" }}>Current workflow</p>
-              <p className="notes">
-                The redesign is applied here while keeping your existing trip builder behavior, routes, and API flow.
-              </p>
-            </div>
-          </div>
-        </aside>
+          </aside>
+        ) : null}
       </div>
     </section>
   );

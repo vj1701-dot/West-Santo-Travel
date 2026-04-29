@@ -56,18 +56,17 @@ export function OverviewFilters({
     <form action="/" className="dashboard-card overview-filter-card" method="GET">
       {previewRole ? <input name="previewRole" type="hidden" value={previewRole} /> : null}
       <div className="overview-filter-toolbar">
-        <div>
-          <p className="eyebrow">Filters</p>
-          <h3 style={{ marginTop: "4px" }}>Operational scope</h3>
-        </div>
+        <p className="eyebrow">Filters</p>
         <div className="actions-row overview-filter-toolbar__actions">
           <a className="button-secondary" href="/api/exports/trips">
             Export
           </a>
-          <Link className="link-button-primary" href="/add-flight">
+          <Link className="button-secondary" href="/add-flight">
             New itinerary
           </Link>
-          <button type="submit">Apply filters</button>
+          <button className="button-secondary" type="submit">
+            Apply filters
+          </button>
           <a className="button-secondary" href={clearHref}>
             Clear
           </a>
