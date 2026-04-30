@@ -26,8 +26,8 @@ const navSections = [
   {
     label: "Travel",
     items: [
-      { href: "/", label: "Overview", roles: ["ADMIN", "COORDINATOR", "PASSENGER"] },
-      { href: "/itineraries", label: "Itineraries", roles: ["ADMIN", "COORDINATOR", "PASSENGER"] },
+      { href: "/", label: "Overview", roles: ["ADMIN", "COORDINATOR"] },
+      { href: "/itineraries", label: "Itineraries", roles: ["ADMIN", "COORDINATOR"] },
       { href: "/add-flight", label: "Add Flight", roles: ["ADMIN", "COORDINATOR"] },
       { href: "/submissions", label: "Submissions", roles: ["ADMIN", "COORDINATOR"] },
     ],
@@ -37,7 +37,7 @@ const navSections = [
     items: [
       { href: "/passengers", label: "Passengers", roles: ["ADMIN", "COORDINATOR"] },
       { href: "/drivers", label: "Drivers", roles: ["ADMIN", "COORDINATOR"] },
-      { href: "/users", label: "Users", roles: ["ADMIN", "COORDINATOR"] },
+      { href: "/users", label: "Users", roles: ["ADMIN"] },
     ],
   },
   {
@@ -53,7 +53,6 @@ const navSections = [
 function formatRole(role: string | null | undefined) {
   if (!role) return "Guest";
   if (role === "COORDINATOR") return "Coordinator";
-  if (role === "PASSENGER") return "Passenger";
   if (role === "ADMIN") return "Admin";
   return role;
 }

@@ -7,6 +7,7 @@ import { ReminderRuleManager } from "@/components/reminder-rule-manager";
 import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
+const INVALID_SCOPE_AIRPORT_ID = "00000000-0000-0000-0000-000000000000";
 
 export default async function RemindersPage() {
   const currentUser = await requireUser();
@@ -14,10 +15,16 @@ export default async function RemindersPage() {
     redirect("/access-denied");
   }
 
+  const coordinatorAirportIds =
+    currentUser.role === "COORDINATOR"
+      ? currentUser.coordinatorAirports.length > 0
+        ? currentUser.coordinatorAirports.map((assignment) => assignment.airportId)
+        : [INVALID_SCOPE_AIRPORT_ID]
+      : undefined;
   const [rules, workflows, upcomingSegments] = await Promise.all([
-    listReminderRules(),
+    listReminderRules(currentUser.role === "COORDINATOR" ? { createdByUserId: currentUser.id } : undefined),
     Promise.resolve(listSystemReminderWorkflows()),
-    listUpcomingFlightSegments(),
+    listUpcomingFlightSegments(30, { airportIds: coordinatorAirportIds }),
   ]);
 
   return (

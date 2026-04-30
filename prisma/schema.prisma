@@ -11,7 +11,6 @@ datasource db {
 enum UserRole {
   ADMIN
   COORDINATOR
-  PASSENGER
 }
 
 enum PassengerType {
@@ -148,7 +147,7 @@ model User {
   phone            String?
   firstName        String   @default("")
   lastName         String   @default("")
-  role             UserRole @default(PASSENGER)
+  role             UserRole @default(COORDINATOR)
   isActive         Boolean  @default(true)
   accessProvisionedAt DateTime @default(now()) @db.Timestamptz(6)
   identityProvider String?
@@ -753,6 +752,7 @@ model ReminderRule {
   offsetMinutes  Int              @default(0)
   template       String
   createdByUserId String          @db.Uuid
+  airportScopeIds String[]        @default([])
   lastRunAt      DateTime?        @db.Timestamptz(6)
   lastError      String?
   createdAt      DateTime         @default(now()) @db.Timestamptz(6)

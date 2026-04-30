@@ -17,7 +17,7 @@ const updateUserSchema = z.object({
 });
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  const auth = await requireApiRoles(["ADMIN"]);
   if (auth instanceof Response) return auth;
   const { id } = await context.params;
   const json = await request.json();
@@ -31,7 +31,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 }
 
 export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  const auth = await requireApiRoles(["ADMIN"]);
   if (auth instanceof Response) return auth;
   const { id } = await context.params;
   return ok(await updateUser(id, { isActive: false }));

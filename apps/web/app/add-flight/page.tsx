@@ -42,7 +42,7 @@ export default async function AddFlightPage() {
           label: `${passenger.firstName} ${passenger.lastName}`,
           detail: passenger.phone ?? passenger.legalName ?? passenger.passengerType,
         }))}
-        showSummary={false}
+        showBookingDetails={currentUser.role === "ADMIN"}
         submitUrl="/api/itineraries"
         submitLabel="Save trip"
         successPath="/itineraries"

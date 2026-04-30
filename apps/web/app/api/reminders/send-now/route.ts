@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRoles } from "@/lib/auth/guards";
+const INVALID_SCOPE_AIRPORT_ID = "00000000-0000-0000-0000-000000000000";
 
 const schema = z.object({
   flightSegmentId: z.string().uuid(),
@@ -20,6 +21,14 @@ export async function POST(request: Request) {
     return fail("BAD_REQUEST", parsed.error.issues[0]?.message ?? "Invalid payload.", 400);
   }
 
-  const result = await queueOneOffFlightReminder(parsed.data);
-  return ok(result);
+  const scopedResult = await queueOneOffFlightReminder({
+    ...parsed.data,
+    airportIds:
+      auth.role === "COORDINATOR"
+        ? auth.coordinatorAirports.length > 0
+          ? auth.coordinatorAirports.map((assignment) => assignment.airportId)
+          : [INVALID_SCOPE_AIRPORT_ID]
+        : undefined,
+  });
+  return ok(scopedResult);
 }

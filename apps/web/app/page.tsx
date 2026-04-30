@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { listAirports, listItineraries, listPassengerItineraries, listPassengers } from "@west-santo/data";
+import { listAirports, listItineraries, listPassengers } from "@west-santo/data";
 
 import { AppShell } from "@/components/app-shell";
 import { OverviewFilters } from "@/components/overview-filters";
@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
-const INVALID_SCOPE_FILTER = "__none__";
+const INVALID_SCOPE_FILTER = "00000000-0000-0000-0000-000000000000";
 
 type OverviewSearchParams = {
   previewRole?: string | string[];
@@ -47,9 +47,13 @@ function getParamValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-function getScopedAirportIds(selectedAirportIds: string[], coordinatorAirportIds: string[]) {
-  if (coordinatorAirportIds.length === 0) {
+function getScopedAirportIds(selectedAirportIds: string[], coordinatorAirportIds: string[], isCoordinator: boolean) {
+  if (!isCoordinator) {
     return selectedAirportIds.length > 0 ? selectedAirportIds : undefined;
+  }
+
+  if (coordinatorAirportIds.length === 0) {
+    return [INVALID_SCOPE_FILTER];
   }
 
   if (selectedAirportIds.length === 0) {
@@ -153,61 +157,50 @@ export default async function OverviewPage({
   const resolvedSearchParams = (await searchParams) ?? {};
   const previewRole = getParamValue(resolvedSearchParams.previewRole);
   const effectiveRole =
-    currentUser.role === "ADMIN" && ["ADMIN", "COORDINATOR", "PASSENGER"].includes(previewRole ?? "")
-      ? (previewRole as "ADMIN" | "COORDINATOR" | "PASSENGER")
+    currentUser.role === "ADMIN" && ["ADMIN", "COORDINATOR"].includes(previewRole ?? "")
+      ? (previewRole as "ADMIN" | "COORDINATOR")
       : currentUser.role;
 
   const selectedPassengerIds = getParamArray(resolvedSearchParams.passengerId);
   const selectedAirportIds = getParamArray(resolvedSearchParams.airportId);
-  const coordinatorAirportIds =
-    effectiveRole === "COORDINATOR" ? currentUser.coordinatorAirports.map((assignment) => assignment.airportId) : [];
+  const coordinatorAirportIds = effectiveRole === "COORDINATOR" ? currentUser.coordinatorAirports.map((assignment) => assignment.airportId) : [];
 
   const [passengers, airports] = await Promise.all([listPassengers(), listAirports()]);
   const visibleAirports = airports.filter(
     (airport) => effectiveRole !== "COORDINATOR" || coordinatorAirportIds.includes(airport.id),
   );
-  const scopedAirportIds = getScopedAirportIds(selectedAirportIds, coordinatorAirportIds);
+  const scopedAirportIds = getScopedAirportIds(selectedAirportIds, coordinatorAirportIds, effectiveRole === "COORDINATOR");
 
-  const itineraries = await (
-    effectiveRole === "PASSENGER"
-      ? listPassengerItineraries(currentUser.id, {
-          airportIds: scopedAirportIds,
-        })
-      : listItineraries({
-          airportIds: scopedAirportIds,
-          passengerIds: selectedPassengerIds.length > 0 ? selectedPassengerIds : undefined,
-        })
-  );
+  const itineraries = await listItineraries({
+    airportIds: scopedAirportIds,
+    passengerIds: selectedPassengerIds.length > 0 ? selectedPassengerIds : undefined,
+  });
 
   const upcomingTrips = buildUpcomingTrips(itineraries);
 
   return (
     <AppShell currentUser={currentUser} effectiveRole={effectiveRole}>
-      {effectiveRole !== "PASSENGER" ? (
-        <>
-          <OverviewFilters
-            airports={visibleAirports.map((airport) => ({
-              id: airport.id,
-              code: airport.code,
-              name: airport.name,
-              city: airport.city,
-              country: airport.country,
-            }))}
-            clearHref={buildClearHref(previewRole)}
-            passengers={passengers.map((passenger) => ({
-              id: passenger.id,
-              label: formatPassengerName(passenger),
-              detail: passenger.passengerType.replace(/_/g, " "),
-            }))}
-            previewRole={previewRole}
-            selectedAirportIds={selectedAirportIds.filter((airportId) => visibleAirports.some((airport) => airport.id === airportId))}
-            selectedPassengerIds={selectedPassengerIds.filter((passengerId) => passengers.some((passenger) => passenger.id === passengerId))}
-          />
-          <UpcomingTripsSection title="Upcoming Travels" trips={upcomingTrips} />
-        </>
-      ) : (
-        <PassengerOverview trips={upcomingTrips} />
-      )}
+      <>
+        <OverviewFilters
+          airports={visibleAirports.map((airport) => ({
+            id: airport.id,
+            code: airport.code,
+            name: airport.name,
+            city: airport.city,
+            country: airport.country,
+          }))}
+          clearHref={buildClearHref(previewRole)}
+          passengers={passengers.map((passenger) => ({
+            id: passenger.id,
+            label: formatPassengerName(passenger),
+            detail: passenger.passengerType.replace(/_/g, " "),
+          }))}
+          previewRole={previewRole}
+          selectedAirportIds={selectedAirportIds.filter((airportId) => visibleAirports.some((airport) => airport.id === airportId))}
+          selectedPassengerIds={selectedPassengerIds.filter((passengerId) => passengers.some((passenger) => passenger.id === passengerId))}
+        />
+        <UpcomingTripsSection title="Upcoming Travels" trips={upcomingTrips} />
+      </>
     </AppShell>
   );
 }
@@ -264,59 +257,6 @@ function UpcomingTripsSection({
           ))}
         </div>
       )}
-    </section>
-  );
-}
-
-function PassengerOverview({
-  trips,
-}: {
-  trips: UpcomingTripRecord[];
-}) {
-  const featured = trips[0];
-
-  if (!featured) {
-    return (
-      <section className="dashboard-card">
-        <h3>No upcoming travel</h3>
-        <p className="notes" style={{ marginTop: "8px" }}>
-          Your travel will appear here once a trip is assigned.
-        </p>
-      </section>
-    );
-  }
-
-  return (
-    <section className="dashboard-card stack passenger-trip-card">
-      <div className="row-card__title">
-        <div>
-          <p className="eyebrow">Your next trip</p>
-          <h3>{flightHeadline(featured.primarySegment)}</h3>
-        </div>
-        <Link className="button-secondary" href={deepLinkHref(featured.itinerary.id)}>
-          Open trip
-        </Link>
-      </div>
-      <div className="overview-trip-details">
-        <p>
-          <strong>Airline:</strong> {getAirlineBrand(featured.primarySegment.airline).code}
-        </p>
-        <p>
-          <strong>Departure:</strong> {formatDateTime(featured.primarySegment.departureTimeLocal)}
-        </p>
-        <p>
-          <strong>Arrival:</strong> {formatDateTime(featured.primarySegment.arrivalTimeLocal)}
-        </p>
-        <p>
-          <strong>Passengers:</strong> {featured.itinerary.itineraryPassengers.map((item) => formatPassengerName(item.passenger)).join("; ")}
-        </p>
-        <p>
-          <strong>Pickup:</strong> {formatDriverAssignments(featured.itinerary, "PICKUP")}
-        </p>
-        <p>
-          <strong>Drop-off:</strong> {formatDriverAssignments(featured.itinerary, "DROPOFF")}
-        </p>
-      </div>
     </section>
   );
 }

@@ -1,4 +1,4 @@
-import { listItineraries, listPassengerItineraries } from "@west-santo/data";
+import { listItineraries } from "@west-santo/data";
 
 import { AppShell } from "@/components/app-shell";
 import { ItineraryList } from "@/components/itinerary-list";
@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/page-header";
 import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
+const INVALID_SCOPE_AIRPORT_ID = "00000000-0000-0000-0000-000000000000";
 
 export default async function ItinerariesPage({
   searchParams,
@@ -17,14 +18,16 @@ export default async function ItinerariesPage({
   const focusedItineraryId = Array.isArray(resolvedSearchParams.itineraryId)
     ? resolvedSearchParams.itineraryId[0]
     : resolvedSearchParams.itineraryId;
-  const [itineraries, allItineraries] = await (
-    currentUser.role === "PASSENGER"
-      ? Promise.all([
-          listPassengerItineraries(currentUser.id),
-          listPassengerItineraries(currentUser.id, { includeArchived: true }),
-        ])
-      : Promise.all([listItineraries(), listItineraries({ includeArchived: true })])
-  );
+  const coordinatorAirportIds =
+    currentUser.role === "COORDINATOR"
+      ? currentUser.coordinatorAirports.map((assignment) => assignment.airportId)
+      : undefined;
+  const scopedAirportIds =
+    currentUser.role === "COORDINATOR" ? (coordinatorAirportIds!.length > 0 ? coordinatorAirportIds : [INVALID_SCOPE_AIRPORT_ID]) : undefined;
+  const [itineraries, allItineraries] = await Promise.all([
+    listItineraries({ airportIds: scopedAirportIds }),
+    listItineraries({ includeArchived: true, airportIds: scopedAirportIds }),
+  ]);
 
   return (
     <AppShell currentUser={currentUser}>
@@ -58,7 +61,6 @@ export default async function ItinerariesPage({
           })),
         }))}
         focusedItineraryId={focusedItineraryId}
-        role={currentUser.role}
       />
     </AppShell>
   );

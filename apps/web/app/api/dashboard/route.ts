@@ -3,7 +3,7 @@ import { getDashboardSnapshot } from "@west-santo/data";
 import { ok } from "@/lib/api/response";
 import { requireApiUser } from "@/lib/auth/guards";
 
-const INVALID_SCOPE_FILTER = "__none__";
+const INVALID_SCOPE_FILTER = "00000000-0000-0000-0000-000000000000";
 
 export async function GET(request: Request) {
   const auth = await requireApiUser();

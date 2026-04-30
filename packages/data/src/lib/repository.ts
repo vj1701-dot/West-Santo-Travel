@@ -32,11 +32,11 @@ import { classifyTelegramLinkInput, dedupeGoogleSheetsPassengers, normalizeGoogl
 import { prisma } from "./prisma";
 
 function toSummaryRole(role?: string | null): UserRole {
-  if (role === "ADMIN" || role === "COORDINATOR" || role === "PASSENGER") {
+  if (role === "ADMIN" || role === "COORDINATOR") {
     return role;
   }
 
-  return UserRole.ADMIN;
+  return UserRole.COORDINATOR;
 }
 
 function parseDisplayName(displayName?: string | null) {
@@ -4806,6 +4806,26 @@ async function getAssignedAirportIdsForUser(userId: string) {
   };
 }
 
+function buildFlightSegmentAirportScopeWhere(airportIds?: string[] | null): Prisma.FlightSegmentWhereInput | undefined {
+  if (!airportIds || airportIds.length === 0) {
+    return undefined;
+  }
+
+  return {
+    OR: [
+      { departureAirportId: { in: airportIds } },
+      { arrivalAirportId: { in: airportIds } },
+      {
+        transportTasks: {
+          some: {
+            airportId: { in: airportIds },
+          },
+        },
+      },
+    ],
+  };
+}
+
 export async function listUpcomingFlightsForUserChat(chatId: string, limit = 8) {
   const user = await prisma.user.findUnique({
     where: { telegramChatId: chatId },
@@ -4854,8 +4874,15 @@ export async function listUpcomingFlightsForUserChat(chatId: string, limit = 8) 
   return { user, flights };
 }
 
-export async function listReminderRules() {
+export async function listReminderRules(options?: {
+  createdByUserId?: string;
+}) {
   return prisma.reminderRule.findMany({
+    where: options?.createdByUserId
+      ? {
+          createdByUserId: options.createdByUserId,
+        }
+      : undefined,
     orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
     include: {
       createdByUser: true,
@@ -4875,6 +4902,7 @@ export async function createReminderRule(input: {
   offsetMinutes?: number;
   template: string;
   createdByUserId: string;
+  airportScopeIds?: string[];
 }) {
   return prisma.reminderRule.create({
     data: {
@@ -4885,6 +4913,7 @@ export async function createReminderRule(input: {
       offsetMinutes: input.offsetMinutes ?? 0,
       template: input.template,
       createdByUserId: input.createdByUserId,
+      airportScopeIds: input.airportScopeIds ?? [],
     },
   });
 }
@@ -4899,11 +4928,21 @@ export async function updateReminderRule(
     channel?: ReminderChannel;
     offsetMinutes?: number;
     template?: string;
+    airportScopeIds?: string[];
   },
 ) {
   return prisma.reminderRule.update({
     where: { id },
     data: input,
+  });
+}
+
+export async function getReminderRule(id: string) {
+  return prisma.reminderRule.findUnique({
+    where: { id },
+    include: {
+      createdByUser: true,
+    },
   });
 }
 
@@ -5004,6 +5043,7 @@ export async function evaluateReminderRules() {
                 gte: windowStart,
                 lte: windowEnd,
               },
+              ...(buildFlightSegmentAirportScopeWhere(rule.airportScopeIds) ?? {}),
             },
             include: {
               itinerary: {
@@ -5084,6 +5124,7 @@ export async function evaluateReminderRules() {
                 gte: windowStart,
                 lte: windowEnd,
               },
+              ...(buildFlightSegmentAirportScopeWhere(rule.airportScopeIds) ?? {}),
             },
             include: {
               departureAirport: true,
@@ -5143,6 +5184,13 @@ export async function evaluateReminderRules() {
                 gte: windowStart,
                 lte: windowEnd,
               },
+              ...(rule.airportScopeIds.length > 0
+                ? {
+                    airportId: {
+                      in: rule.airportScopeIds,
+                    },
+                  }
+                : {}),
             },
             include: {
               airport: true,
@@ -5546,11 +5594,12 @@ export async function markNotificationFailed(id: string, errorMessage: string, p
   });
 }
 
-export async function listUpcomingFlightSegments(limit = 30) {
+export async function listUpcomingFlightSegments(limit = 30, options?: { airportIds?: string[] | null }) {
   return prisma.flightSegment.findMany({
     where: {
       itinerary: { isArchived: false },
       departureTimeUtc: { gte: new Date() },
+      ...(buildFlightSegmentAirportScopeWhere(options?.airportIds) ?? {}),
     },
     orderBy: { departureTimeUtc: "asc" },
     take: limit,
@@ -5570,6 +5619,7 @@ export async function queueOneOffFlightReminder(input: {
   flightSegmentId: string;
   channel: "TELEGRAM" | "SMS" | "TELEGRAM_SMS";
   message?: string | null;
+  airportIds?: string[] | null;
 }) {
   return prisma.$transaction(async (tx) => {
     const segment = await tx.flightSegment.findUnique({
@@ -5602,6 +5652,17 @@ export async function queueOneOffFlightReminder(input: {
 
     if (!segment) {
       throw new Error("Flight segment not found.");
+    }
+
+    if (input.airportIds?.length) {
+      const isScopedMatch =
+        input.airportIds.includes(segment.departureAirportId) ||
+        input.airportIds.includes(segment.arrivalAirportId) ||
+        segment.itinerary.transportTasks.some((task) => input.airportIds?.includes(task.airportId));
+
+      if (!isScopedMatch) {
+        throw new Error("Flight segment is outside your airport scope.");
+      }
     }
 
     const passengerRows = formatPassengerReminderRows(

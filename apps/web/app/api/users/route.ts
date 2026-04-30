@@ -16,7 +16,7 @@ const createUserSchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  const auth = await requireApiRoles(["ADMIN"]);
   if (auth instanceof Response) return auth;
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? undefined;
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
+  const auth = await requireApiRoles(["ADMIN"]);
   if (auth instanceof Response) return auth;
   const json = await request.json();
   const parsed = createUserSchema.safeParse(json);

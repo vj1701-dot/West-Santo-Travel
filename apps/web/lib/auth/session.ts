@@ -81,7 +81,7 @@ export async function requireUser() {
   return user;
 }
 
-export async function requireRole(role: "ADMIN" | "COORDINATOR" | "PASSENGER") {
+export async function requireRole(role: "ADMIN" | "COORDINATOR") {
   const user = await requireUser();
 
   if (user.role !== role) {
@@ -123,7 +123,7 @@ export async function requireApiUser() {
   return user;
 }
 
-export async function requireApiRole(role: "ADMIN" | "COORDINATOR" | "PASSENGER") {
+export async function requireApiRole(role: "ADMIN" | "COORDINATOR") {
   const user = await requireApiUser();
 
   if (user instanceof Response) {
@@ -137,7 +137,7 @@ export async function requireApiRole(role: "ADMIN" | "COORDINATOR" | "PASSENGER"
   return user;
 }
 
-export async function requireApiRoles(roles: Array<"ADMIN" | "COORDINATOR" | "PASSENGER">) {
+export async function requireApiRoles(roles: Array<"ADMIN" | "COORDINATOR">) {
   const user = await requireApiUser();
 
   if (user instanceof Response) {

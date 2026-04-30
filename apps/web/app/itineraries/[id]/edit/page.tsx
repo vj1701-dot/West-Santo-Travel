@@ -10,6 +10,21 @@ import { requireUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
+function itineraryTouchesAirportScope(
+  itinerary: NonNullable<Awaited<ReturnType<typeof getItineraryDetail>>>,
+  airportIds: string[],
+) {
+  if (airportIds.length === 0) {
+    return false;
+  }
+
+  return (
+    itinerary.flightSegments.some(
+      (segment) => airportIds.includes(segment.departureAirportId) || airportIds.includes(segment.arrivalAirportId),
+    ) || itinerary.transportTasks.some((task) => airportIds.includes(task.airportId))
+  );
+}
+
 function toLocalInputValue(value: Date) {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -35,6 +50,13 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
 
   if (!itinerary) {
     redirect("/itineraries");
+  }
+
+  if (
+    currentUser.role === "COORDINATOR" &&
+    !itineraryTouchesAirportScope(itinerary, currentUser.coordinatorAirports.map((assignment) => assignment.airportId))
+  ) {
+    redirect("/access-denied");
   }
 
   return (
@@ -98,32 +120,35 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
           })),
         }}
         method="PATCH"
+        showBookingDetails={currentUser.role === "ADMIN"}
         submitLabel="Save changes"
         submitUrl={`/api/itineraries/${itinerary.id}`}
         successPath="/itineraries"
       />
-      <RefundManager
-        hasTripCost={Boolean(itinerary.booking?.totalCost !== null && itinerary.booking?.totalCost !== undefined)}
-        itineraryId={itinerary.id}
-        passengers={itinerary.itineraryPassengers.map((item) => ({
-          id: item.passenger.id,
-          name: `${item.passenger.firstName} ${item.passenger.lastName}`,
-        }))}
-        refunds={itinerary.refundEvents.map((refund) => ({
-          id: refund.id,
-          amount: Number(refund.amount),
-          refundedAt: refund.refundedAt.toISOString().slice(0, 10),
-          note: refund.note ?? null,
-          recordedBy:
-            refund.recordedByUser?.name ||
-            `${refund.recordedByUser?.firstName ?? ""} ${refund.recordedByUser?.lastName ?? ""}`.trim() ||
-            null,
-          allocations: refund.allocations.map((allocation) => ({
-            passengerName: `${allocation.bookingAllocation.passenger.firstName} ${allocation.bookingAllocation.passenger.lastName}`,
-            amount: Number(allocation.amount),
-          })),
-        }))}
-      />
+      {currentUser.role === "ADMIN" ? (
+        <RefundManager
+          hasTripCost={Boolean(itinerary.booking?.totalCost !== null && itinerary.booking?.totalCost !== undefined)}
+          itineraryId={itinerary.id}
+          passengers={itinerary.itineraryPassengers.map((item) => ({
+            id: item.passenger.id,
+            name: `${item.passenger.firstName} ${item.passenger.lastName}`,
+          }))}
+          refunds={itinerary.refundEvents.map((refund) => ({
+            id: refund.id,
+            amount: Number(refund.amount),
+            refundedAt: refund.refundedAt.toISOString().slice(0, 10),
+            note: refund.note ?? null,
+            recordedBy:
+              refund.recordedByUser?.name ||
+              `${refund.recordedByUser?.firstName ?? ""} ${refund.recordedByUser?.lastName ?? ""}`.trim() ||
+              null,
+            allocations: refund.allocations.map((allocation) => ({
+              passengerName: `${allocation.bookingAllocation.passenger.firstName} ${allocation.bookingAllocation.passenger.lastName}`,
+              amount: Number(allocation.amount),
+            })),
+          }))}
+        />
+      ) : null}
     </AppShell>
   );
 }

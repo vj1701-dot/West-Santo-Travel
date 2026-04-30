@@ -148,12 +148,10 @@ function sortByTripDateDescending(left: ItineraryRecord, right: ItineraryRecord)
 export function ItineraryList({
   activeSource,
   archivedSource,
-  role,
   focusedItineraryId,
 }: {
   activeSource: ItineraryRecord[];
   archivedSource: ItineraryRecord[];
-  role: string;
   focusedItineraryId?: string | null;
 }) {
   const { currentTrips, oldTrips } = useMemo(() => {
@@ -202,7 +200,7 @@ export function ItineraryList({
       <div className="panel stack">
         <div className="panel-head">
           <div>
-            <p className="eyebrow">{role === "PASSENGER" ? "My Travel" : "Operations"}</p>
+            <p className="eyebrow">Operations</p>
             <h2>{currentTrips.length} itinerary{currentTrips.length === 1 ? "" : "ies"}</h2>
           </div>
         </div>
@@ -212,7 +210,7 @@ export function ItineraryList({
         ) : (
           <div className="boarding-pass-grid">
             {currentTrips.map((itinerary) => (
-              <ItineraryCard focused={itinerary.id === focusedItineraryId} itinerary={itinerary} key={itinerary.id} role={role} />
+              <ItineraryCard focused={itinerary.id === focusedItineraryId} itinerary={itinerary} key={itinerary.id} />
             ))}
           </div>
         )}
@@ -231,7 +229,7 @@ export function ItineraryList({
         ) : (
           <div className="boarding-pass-grid boarding-pass-grid--old">
             {oldTrips.map((itinerary) => (
-              <ItineraryCard focused={itinerary.id === focusedItineraryId} itinerary={itinerary} key={itinerary.id} muted role={role} />
+              <ItineraryCard focused={itinerary.id === focusedItineraryId} itinerary={itinerary} key={itinerary.id} muted />
             ))}
           </div>
         )}
@@ -242,12 +240,10 @@ export function ItineraryList({
 
 function ItineraryCard({
   itinerary,
-  role,
   focused = false,
   muted = false,
 }: {
   itinerary: ItineraryRecord;
-  role: string;
   focused?: boolean;
   muted?: boolean;
 }) {
@@ -276,12 +272,12 @@ function ItineraryCard({
           >
             {itinerary.isArchived ? "Archived" : itinerary.status}
           </span>
-          {role !== "PASSENGER" && googleSheetsReviewRequired ? <span className="pill pending">Sync review</span> : null}
-          {role !== "PASSENGER" ? (
+          {googleSheetsReviewRequired ? <span className="pill pending">Sync review</span> : null}
+          {
             <Link className="button-secondary" href={`/itineraries/${itinerary.id}/edit`}>
               Edit
             </Link>
-          ) : null}
+          }
         </div>
       </div>
 

@@ -1,8 +1,23 @@
-import { addFlightSegment, createApprovalRequest } from "@west-santo/data";
+import { addFlightSegment, createApprovalRequest, getItineraryDetail } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRoles } from "@/lib/auth/guards";
+
+function itineraryTouchesAirportScope(
+  itinerary: NonNullable<Awaited<ReturnType<typeof getItineraryDetail>>>,
+  airportIds: string[],
+) {
+  if (airportIds.length === 0) {
+    return false;
+  }
+
+  return (
+    itinerary.flightSegments.some(
+      (segment) => airportIds.includes(segment.departureAirportId) || airportIds.includes(segment.arrivalAirportId),
+    ) || itinerary.transportTasks.some((task) => airportIds.includes(task.airportId))
+  );
+}
 
 const segmentSchema = z.object({
   segmentOrder: z.number().int().min(1),
@@ -26,6 +41,14 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   if (auth.role === "COORDINATOR") {
+    const itinerary = await getItineraryDetail(id);
+    if (!itinerary) {
+      return fail("NOT_FOUND", "Itinerary not found.", 404);
+    }
+    if (!itineraryTouchesAirportScope(itinerary, auth.coordinatorAirports.map((assignment) => assignment.airportId))) {
+      return fail("FORBIDDEN", "You do not have access to this itinerary.", 403);
+    }
+
     const approval = await createApprovalRequest({
       itineraryId: id,
       requestedByUserId: auth.id,

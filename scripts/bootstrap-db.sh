@@ -31,10 +31,22 @@ if ! psql "$DB_CHECK_URL" -c "SELECT 1" > /dev/null 2>&1; then
 fi
 
 echo "Applying database schema..."
-npx prisma migrate deploy --schema prisma/schema.prisma || {
-  echo "Migrate deploy failed, attempting db push..."
-  npx prisma db push --schema prisma/schema.prisma
-}
+if ! npx prisma migrate deploy --schema prisma/schema.prisma; then
+  echo "Migrate deploy failed, attempting db push with accepted data loss..."
+  npx prisma db push --accept-data-loss --schema prisma/schema.prisma
+
+  echo "Reconciling Prisma migration history to the current schema state..."
+  psql "$DB_CHECK_URL" -c \
+    "UPDATE \"_prisma_migrations\" SET \"rolled_back_at\" = NOW() WHERE \"finished_at\" IS NULL AND \"rolled_back_at\" IS NULL;" \
+    > /dev/null 2>&1 || true
+
+  for migration_dir in prisma/migrations/*; do
+    if [ -d "$migration_dir" ]; then
+      migration_name=$(basename "$migration_dir")
+      npx prisma migrate resolve --applied "$migration_name" --schema prisma/schema.prisma > /dev/null 2>&1 || true
+    fi
+  done
+fi
 
 echo "Checking whether application data already exists..."
 USER_COUNT_QUERY='SELECT COUNT(*) FROM "User"'

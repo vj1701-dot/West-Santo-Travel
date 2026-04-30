@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function UsersPage() {
   const currentUser = await requireUser();
-  if (!["ADMIN", "COORDINATOR"].includes(currentUser.role)) {
+  if (currentUser.role !== "ADMIN") {
     redirect("/access-denied");
   }
   const [users, airports] = await Promise.all([listUsers(), listAirports()]);

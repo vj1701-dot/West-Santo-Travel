@@ -5,6 +5,21 @@ import { z } from "zod";
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRole, requireApiRoles } from "@/lib/auth/guards";
 
+function itineraryTouchesAirportScope(
+  itinerary: NonNullable<Awaited<ReturnType<typeof getItineraryDetail>>>,
+  airportIds: string[],
+) {
+  if (airportIds.length === 0) {
+    return false;
+  }
+
+  return (
+    itinerary.flightSegments.some(
+      (segment) => airportIds.includes(segment.departureAirportId) || airportIds.includes(segment.arrivalAirportId),
+    ) || itinerary.transportTasks.some((task) => airportIds.includes(task.airportId))
+  );
+}
+
 const updateItinerarySchema = z.object({
   notes: z.string().nullable().optional(),
   status: z.nativeEnum(ItineraryStatus).optional(),
@@ -49,13 +64,20 @@ const updateItinerarySchema = z.object({
 });
 
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
-  const auth = await requireApiRoles(["ADMIN", "COORDINATOR", "PASSENGER"]);
+  const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
   const { id } = await context.params;
   const itinerary = await getItineraryDetail(id);
 
   if (!itinerary) {
     return fail("NOT_FOUND", "Itinerary not found.", 404);
+  }
+
+  if (
+    auth.role === "COORDINATOR" &&
+    !itineraryTouchesAirportScope(itinerary, auth.coordinatorAirports.map((assignment) => assignment.airportId))
+  ) {
+    return fail("FORBIDDEN", "You do not have access to this itinerary.", 403);
   }
 
   return ok(itinerary);
@@ -75,10 +97,18 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const isFullTripUpdate = Array.isArray(parsed.data.passengerIds) || Array.isArray(parsed.data.segments);
 
   if (auth.role === "COORDINATOR") {
+    if (parsed.data.booking !== undefined) {
+      return fail("FORBIDDEN", "Booking details are admin-only.", 403);
+    }
+
     const itinerary = await getItineraryDetail(id);
 
     if (!itinerary) {
       return fail("NOT_FOUND", "Itinerary not found.", 404);
+    }
+
+    if (!itineraryTouchesAirportScope(itinerary, auth.coordinatorAirports.map((assignment) => assignment.airportId))) {
+      return fail("FORBIDDEN", "You do not have access to this itinerary.", 403);
     }
 
     const approval = await createApprovalRequest({

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRoles } from "@/lib/auth/guards";
+const INVALID_SCOPE_AIRPORT_ID = "00000000-0000-0000-0000-000000000000";
 
 const createReminderRuleSchema = z.object({
   name: z.string().min(1),
@@ -17,7 +18,7 @@ const createReminderRuleSchema = z.object({
 export async function GET() {
   const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
-  return ok(await listReminderRules());
+  return ok(await listReminderRules(auth.role === "COORDINATOR" ? { createdByUserId: auth.id } : undefined));
 }
 
 export async function POST(request: Request) {
@@ -34,6 +35,12 @@ export async function POST(request: Request) {
     await createReminderRule({
       ...parsed.data,
       createdByUserId: auth.id,
+      airportScopeIds:
+        auth.role === "COORDINATOR"
+          ? auth.coordinatorAirports.length > 0
+            ? auth.coordinatorAirports.map((assignment) => assignment.airportId)
+            : [INVALID_SCOPE_AIRPORT_ID]
+          : [],
     }),
     { status: 201 },
   );

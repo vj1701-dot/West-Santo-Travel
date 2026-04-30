@@ -19,7 +19,7 @@ type UserRecord = {
   lastName: string;
   email: string;
   phone: string | null;
-  role: "ADMIN" | "COORDINATOR" | "PASSENGER";
+  role: "ADMIN" | "COORDINATOR";
   excludeFromCoordinatorMessages: boolean;
   isActive: boolean;
   telegramChatId: string | null;
@@ -37,7 +37,7 @@ type FormState = {
   lastName: string;
   email: string;
   phone: string;
-  role: "ADMIN" | "COORDINATOR" | "PASSENGER";
+  role: "ADMIN" | "COORDINATOR";
   excludeFromCoordinatorMessages: boolean;
   airportIds: string[];
   isActive: boolean;
@@ -397,7 +397,6 @@ function UserFields({
           <select value={formState.role} onChange={(event) => onChange("role", event.target.value as FormState["role"])}>
             <option value="ADMIN">Admin</option>
             <option value="COORDINATOR">Coordinator</option>
-            <option value="PASSENGER">Passenger</option>
           </select>
         </label>
       </div>

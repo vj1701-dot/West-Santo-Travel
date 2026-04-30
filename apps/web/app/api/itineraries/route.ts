@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRoles } from "@/lib/auth/guards";
+const INVALID_SCOPE_AIRPORT_ID = "00000000-0000-0000-0000-000000000000";
 
 const createItinerarySchema = z.object({
   notes: z.string().nullable().optional(),
@@ -61,7 +62,14 @@ const createTripSchema = z.object({
 export async function GET() {
   const auth = await requireApiRoles(["ADMIN", "COORDINATOR"]);
   if (auth instanceof Response) return auth;
-  const itineraries = await listItineraries();
+  const itineraries = await listItineraries({
+    airportIds:
+      auth.role === "COORDINATOR"
+        ? auth.coordinatorAirports.length > 0
+          ? auth.coordinatorAirports.map((assignment) => assignment.airportId)
+          : [INVALID_SCOPE_AIRPORT_ID]
+        : undefined,
+  });
   return ok(itineraries);
 }
 
@@ -72,6 +80,9 @@ export async function POST(request: Request) {
   const tripParsed = createTripSchema.safeParse(json);
 
   if (tripParsed.success) {
+    if (auth.role === "COORDINATOR" && tripParsed.data.booking !== undefined) {
+      return fail("FORBIDDEN", "Booking details are admin-only.", 403);
+    }
     const itinerary = await createTrip({
       ...tripParsed.data,
       createdByUserId: auth.id,
