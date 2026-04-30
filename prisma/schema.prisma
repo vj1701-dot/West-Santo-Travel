@@ -148,7 +148,6 @@ model User {
   phone            String?
   firstName        String   @default("")
   lastName         String   @default("")
-  legalName        String?
   role             UserRole @default(PASSENGER)
   isActive         Boolean  @default(true)
   accessProvisionedAt DateTime @default(now()) @db.Timestamptz(6)
@@ -158,9 +157,7 @@ model User {
   lastLoginAt      DateTime? @db.Timestamptz(6)
   telegramChatId   String?  @unique
   telegramUsername String?
-  notes            String?
   excludeFromCoordinatorMessages Boolean @default(false)
-  profileType      ProfileType?
   createdAt        DateTime @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
@@ -187,7 +184,6 @@ model User {
   sessions              Session[]
 
   @@index([phone])
-  @@index([legalName])
 }
 
 model Passenger {
@@ -195,7 +191,6 @@ model Passenger {
   firstName              String
   lastName               String
   legalName              String?
-  email                  String?
   phone                  String?
   telegramChatId         String?
   telegramUsername       String?

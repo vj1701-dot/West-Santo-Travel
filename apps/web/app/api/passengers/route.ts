@@ -1,4 +1,4 @@
-import { createPassenger, listPassengerOptions, listPassengers } from "@west-santo/data";
+﻿import { createPassenger, listPassengerOptions, listPassengers } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
@@ -8,7 +8,6 @@ const createPassengerSchema = z.object({
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   legalName: z.string().nullable().optional(),
-  email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO"]),
   notes: z.string().nullable().optional(),
@@ -42,3 +41,4 @@ export async function POST(request: Request) {
   const passenger = await createPassenger(parsed.data);
   return ok(passenger, { status: 201 });
 }
+

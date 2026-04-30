@@ -1,4 +1,4 @@
-import "server-only";
+﻿import "server-only";
 
 import {
   getDashboardSnapshot,
@@ -62,7 +62,7 @@ export const dataAdapter = {
       queue: overview.transportTasks.slice(0, 3).map((task) => ({
         label: `${task.type} ${task.airport}`,
         value: task.status,
-        detail: `${task.passengers} · Drivers: ${task.drivers}`,
+        detail: `${task.passengers} Â· Drivers: ${task.drivers}`,
       })),
     };
   },
@@ -136,7 +136,7 @@ export const dataAdapter = {
       id: passenger.id,
       name: `${passenger.firstName} ${passenger.lastName}`,
       legalName: passenger.legalName ?? "Not provided",
-      contact: passenger.email ?? passenger.phone ?? "No contact provided",
+      contact: passenger.phone ?? "No contact provided",
       telegram: passenger.telegramChatId ? `Linked chat_id ${passenger.telegramChatId}` : "Unlinked",
       passengerType: passenger.passengerType,
       itineraryCount: passenger.itineraryPassengers.length,
@@ -146,3 +146,4 @@ export const dataAdapter = {
 
   getItineraryDetail,
 };
+

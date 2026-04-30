@@ -1,4 +1,4 @@
-import { getItineraryDetail, listAirports, listDrivers, listPassengers, listUsers } from "@west-santo/data";
+﻿import { getItineraryDetail, listAirports, listDrivers, listPassengers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -26,12 +26,11 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
   }
 
   const { id } = await params;
-  const [itinerary, passengers, airports, drivers, users] = await Promise.all([
+  const [itinerary, passengers, airports, drivers] = await Promise.all([
     getItineraryDetail(id),
     listPassengers(),
     listAirports(),
     listDrivers(),
-    listUsers(),
   ]);
 
   if (!itinerary) {
@@ -69,12 +68,7 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
         passengers={passengers.map((passenger) => ({
           id: passenger.id,
           label: `${passenger.firstName} ${passenger.lastName}`,
-          detail: passenger.phone ?? passenger.email ?? passenger.legalName ?? passenger.passengerType,
-        }))}
-        users={users.map((user) => ({
-          id: user.id,
-          label: `${user.firstName} ${user.lastName}`.trim() || user.email,
-          detail: [user.role, user.email, user.phone].filter(Boolean).join(" · "),
+          detail: passenger.phone ?? passenger.legalName ?? passenger.passengerType,
         }))}
         initialTrip={{
           id: itinerary.id,
@@ -133,3 +127,5 @@ export default async function EditItineraryPage({ params }: { params: Promise<{ 
     </AppShell>
   );
 }
+
+

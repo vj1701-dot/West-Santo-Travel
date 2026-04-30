@@ -1,4 +1,4 @@
-import { listPassengers } from "@west-santo/data";
+﻿import { listPassengers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -28,7 +28,6 @@ export default async function PassengersPage() {
           firstName: passenger.firstName,
           lastName: passenger.lastName,
           legalName: passenger.legalName,
-          email: passenger.email,
           phone: passenger.phone,
           passengerType: passenger.passengerType,
           notes: passenger.notes,
@@ -40,3 +39,5 @@ export default async function PassengersPage() {
     </AppShell>
   );
 }
+
+

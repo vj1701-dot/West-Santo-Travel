@@ -209,19 +209,6 @@ function buildPassengerDisplayName(input: { firstName?: string | null; lastName?
   return `${normalizeSyncText(input.firstName)} ${normalizeSyncText(input.lastName)}`.trim() || "Unknown passenger";
 }
 
-function mapProfileTypeToPassengerType(profileType?: ProfileType | null) {
-  switch (profileType) {
-    case ProfileType.WEST_SANTO:
-      return PassengerType.WEST_SANTO;
-    case ProfileType.GUEST_SANTO:
-      return PassengerType.GUEST_SANTO;
-    case ProfileType.HARIBHAKTO:
-      return PassengerType.HARIBHAKTO;
-    default:
-      return DEFAULT_AUTO_PASSENGER_TYPE;
-  }
-}
-
 function assertPassengerTypeAllowed(type: PassengerType) {
   if (type === PassengerType.EXTRA_SEAT) {
     throw new Error("Extra Seat must be added using the canonical passenger record, not passenger type.");
@@ -727,7 +714,7 @@ export async function listPassengers(search?: string, options?: { includeInactiv
     include: {
       itineraryPassengers: true,
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
   });
 }
 
@@ -746,7 +733,6 @@ export async function updatePassenger(
     firstName?: string;
     lastName?: string;
     legalName?: string | null;
-    email?: string | null;
     phone?: string | null;
     passengerType?: Prisma.PassengerUpdateInput["passengerType"];
     isActive?: boolean;
@@ -781,9 +767,7 @@ export async function listUsers(search?: string, options?: { includeInactive?: b
             OR: [
               { firstName: { contains: search, mode: Prisma.QueryMode.insensitive } },
               { lastName: { contains: search, mode: Prisma.QueryMode.insensitive } },
-              { legalName: { contains: search, mode: Prisma.QueryMode.insensitive } },
               { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
-              { notes: { contains: search, mode: Prisma.QueryMode.insensitive } },
             ],
           }
         : {}),
@@ -793,7 +777,7 @@ export async function listUsers(search?: string, options?: { includeInactive?: b
       coordinatorAirports: { include: { airport: true } },
       passengerUserLinks: { include: { passenger: true } },
     },
-    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
   });
 }
 
@@ -802,10 +786,7 @@ export async function createUser(input: {
   phone?: string | null;
   firstName: string;
   lastName: string;
-  legalName?: string | null;
-  notes?: string | null;
   role: UserRole;
-  profileType?: ProfileType | null;
   excludeFromCoordinatorMessages?: boolean;
   airportIds?: string[];
 }) {
@@ -816,10 +797,7 @@ export async function createUser(input: {
         phone: normalizeOptionalPhone(input.phone),
         firstName: input.firstName,
         lastName: input.lastName,
-        legalName: input.legalName ?? null,
-        notes: input.notes ?? null,
         role: input.role,
-        profileType: input.profileType ?? null,
         excludeFromCoordinatorMessages: input.excludeFromCoordinatorMessages ?? false,
         accessProvisionedAt: new Date(),
       },
@@ -827,7 +805,6 @@ export async function createUser(input: {
 
     await syncPassengerUserLink(tx, {
       userId: user.id,
-      email: input.email,
       phone: input.phone ?? null,
     });
 
@@ -861,10 +838,7 @@ export async function updateUser(
     phone?: string | null;
     firstName?: string;
     lastName?: string;
-    legalName?: string | null;
-    notes?: string | null;
     role?: UserRole;
-    profileType?: ProfileType | null;
     excludeFromCoordinatorMessages?: boolean;
     isActive?: boolean;
     airportIds?: string[];
@@ -885,10 +859,7 @@ export async function updateUser(
         phone: input.phone === undefined ? undefined : normalizeOptionalPhone(input.phone),
         firstName: input.firstName,
         lastName: input.lastName,
-        legalName: input.legalName,
-        notes: input.notes,
         role: input.role,
-        profileType: input.profileType,
         excludeFromCoordinatorMessages: input.excludeFromCoordinatorMessages,
         isActive: input.isActive,
       },
@@ -896,7 +867,6 @@ export async function updateUser(
 
     await syncPassengerUserLink(tx, {
       userId: updated.id,
-      email: updated.email,
       phone: updated.phone,
     });
 
@@ -988,7 +958,6 @@ export async function syncUserIdentityOnLogin(input: {
 
     await syncPassengerUserLink(tx, {
       userId: updated.id,
-      email: updated.email,
       phone: updated.phone,
     });
 
@@ -1000,7 +969,6 @@ export async function createPassenger(input: {
   firstName: string;
   lastName: string;
   legalName?: string | null;
-  email?: string | null;
   phone?: string | null;
   passengerType: Prisma.PassengerCreateInput["passengerType"];
   notes?: string | null;
@@ -1011,7 +979,6 @@ export async function createPassenger(input: {
       firstName: input.firstName,
       lastName: input.lastName,
       legalName: input.legalName ?? null,
-      email: input.email ?? null,
       phone: normalizeOptionalPhone(input.phone),
       passengerType: input.passengerType,
       notes: input.notes ?? null,
@@ -1025,7 +992,7 @@ export async function listPassengerOptions(search?: string) {
   return passengers.map((passenger) => ({
     id: passenger.id,
     label: `${passenger.firstName} ${passenger.lastName}`,
-    detail: passenger.phone ?? passenger.email ?? passenger.legalName ?? passenger.passengerType,
+    detail: passenger.phone ?? passenger.legalName ?? passenger.passengerType,
   }));
 }
 
@@ -1201,22 +1168,17 @@ export async function getItineraryDetail(id: string) {
 export async function createItinerary(input: {
   notes?: string | null;
   passengerIds: string[];
-  travelerRefs?: TravelerRefInput[];
   createdByUserId?: string | null;
 }) {
   return prisma.$transaction(async (tx) => {
-    const resolvedTravelers = await resolveTravelerRefsToPassengerIds(tx, {
-      passengerIds: input.passengerIds,
-      travelerRefs: input.travelerRefs,
-      actorUserId: input.createdByUserId ?? null,
-    });
+    const passengerIds = dedupePassengerIds(input.passengerIds);
 
     const itinerary = await tx.itinerary.create({
       data: {
         notes: input.notes ?? null,
         createdByUserId: input.createdByUserId ?? null,
         itineraryPassengers: {
-          create: resolvedTravelers.passengerIds.map((passengerId) => ({
+          create: passengerIds.map((passengerId) => ({
             passengerId,
           })),
         },
@@ -1232,8 +1194,7 @@ export async function createItinerary(input: {
       entityId: itinerary.id,
       actorUserId: input.createdByUserId ?? null,
       newValues: {
-        passengerIds: resolvedTravelers.passengerIds,
-        travelerRefsResolved: resolvedTravelers.resolutionSummary,
+        passengerIds,
         notes: input.notes ?? null,
       },
     });
@@ -1459,18 +1420,14 @@ async function syncTripRelations(tx: Prisma.TransactionClient, itineraryId: stri
 
 export async function createTrip(input: TripInput) {
   return prisma.$transaction(async (tx) => {
-    const resolvedTravelers = await resolveTravelerRefsToPassengerIds(tx, {
-      passengerIds: input.passengerIds,
-      travelerRefs: input.travelerRefs,
-      actorUserId: input.createdByUserId ?? null,
-    });
+    const passengerIds = dedupePassengerIds(input.passengerIds);
 
     const itinerary = await tx.itinerary.create({
       data: {
         notes: input.notes ?? null,
         createdByUserId: input.createdByUserId ?? null,
         itineraryPassengers: {
-          create: resolvedTravelers.passengerIds.map((passengerId) => ({
+          create: passengerIds.map((passengerId) => ({
             passengerId,
           })),
         },
@@ -1479,7 +1436,7 @@ export async function createTrip(input: TripInput) {
 
     await syncTripRelations(tx, itinerary.id, {
       ...input,
-      passengerIds: resolvedTravelers.passengerIds,
+      passengerIds,
     });
 
     await createAuditLog(tx, {
@@ -1489,8 +1446,7 @@ export async function createTrip(input: TripInput) {
       actorUserId: input.createdByUserId ?? null,
       newValues: {
         notes: input.notes ?? null,
-        passengerIds: resolvedTravelers.passengerIds,
-        travelerRefsResolved: resolvedTravelers.resolutionSummary,
+        passengerIds,
         segmentCount: input.segments.length,
         booking: input.booking ?? null,
         accommodation: input.accommodation ?? null,
@@ -1612,11 +1568,7 @@ export async function deleteItinerary(id: string, actorUserId?: string | null) {
 export async function updateTrip(id: string, input: TripInput & { status?: Prisma.ItineraryUpdateInput["status"] }) {
   return prisma.$transaction(async (tx) => {
     const current = await findTripDetailOrThrow(tx, id);
-    const resolvedTravelers = await resolveTravelerRefsToPassengerIds(tx, {
-      passengerIds: input.passengerIds,
-      travelerRefs: input.travelerRefs,
-      actorUserId: input.createdByUserId ?? null,
-    });
+    const passengerIds = dedupePassengerIds(input.passengerIds);
 
     await tx.itinerary.update({
       where: { id },
@@ -1628,7 +1580,7 @@ export async function updateTrip(id: string, input: TripInput & { status?: Prism
 
     await syncTripRelations(tx, id, {
       ...input,
-      passengerIds: resolvedTravelers.passengerIds,
+      passengerIds,
     });
 
     const updated = await findTripDetailOrThrow(tx, id);
@@ -1646,7 +1598,6 @@ export async function updateTrip(id: string, input: TripInput & { status?: Prism
       newValues: {
         notes: updated.notes,
         passengerIds: updated.itineraryPassengers.map((item) => item.passenger.id),
-        travelerRefsResolved: resolvedTravelers.resolutionSummary,
         segmentCount: updated.flightSegments.length,
       },
     });
@@ -2967,6 +2918,9 @@ function normalizeOptionalPhone(value?: string | null) {
   }
 
   const normalized = normalizePhone(value);
+  if (normalized.length === 11 && normalized.startsWith("1")) {
+    return normalized.slice(1);
+  }
   return normalized.length > 0 ? normalized : null;
 }
 
@@ -3203,85 +3157,6 @@ async function findPassengerBySyncedName(
   return null;
 }
 
-async function findUserBySyncedName(
-  tx: Prisma.TransactionClient,
-  input: { firstName: string; lastName: string },
-) {
-  const normalizedTarget = normalizeSyncPersonName(input.firstName, input.lastName);
-  const normalizedSwappedTarget = normalizeSyncPersonName(input.lastName, input.firstName);
-  if (!normalizedTarget) {
-    return null;
-  }
-
-  const candidates = await tx.user.findMany({
-    where: { isActive: true },
-    include: {
-      passengerUserLinks: {
-        include: { passenger: true },
-        take: 1,
-      },
-    },
-  });
-
-  const exactFullMatches = candidates.filter((user) => {
-    const normalizedUserName = normalizeSyncPersonName(user.firstName, user.lastName);
-    const normalizedLegalName = normalizeSyncName(user.legalName);
-    return normalizedUserName === normalizedTarget || normalizedLegalName === normalizedTarget;
-  });
-  if (exactFullMatches.length === 1) {
-    return {
-      user: exactFullMatches[0],
-      strategy: "exact_full" as const,
-    };
-  }
-
-  const exactSwappedMatches = candidates.filter((user) => {
-    const normalizedUserName = normalizeSyncPersonName(user.firstName, user.lastName);
-    const normalizedLegalName = normalizeSyncName(user.legalName);
-    return normalizedUserName === normalizedSwappedTarget || normalizedLegalName === normalizedSwappedTarget;
-  });
-  if (exactSwappedMatches.length === 1) {
-    return {
-      user: exactSwappedMatches[0],
-      strategy: "exact_swapped" as const,
-    };
-  }
-
-  const fuzzyFullMatch = pickConfidentMatch(
-    candidates.map((user) => ({
-      user,
-      score: Math.max(
-        getSimilarityScore(normalizeSyncPersonName(user.firstName, user.lastName), normalizedTarget),
-        getSimilarityScore(normalizeSyncName(user.legalName), normalizedTarget),
-      ),
-    })),
-  );
-  if (fuzzyFullMatch) {
-    return {
-      user: fuzzyFullMatch.user,
-      strategy: "fuzzy_full" as const,
-    };
-  }
-
-  const fuzzySwappedMatch = pickConfidentMatch(
-    candidates.map((user) => ({
-      user,
-      score: Math.max(
-        getSimilarityScore(normalizeSyncPersonName(user.firstName, user.lastName), normalizedSwappedTarget),
-        getSimilarityScore(normalizeSyncName(user.legalName), normalizedSwappedTarget),
-      ),
-    })),
-  );
-  if (fuzzySwappedMatch) {
-    return {
-      user: fuzzySwappedMatch.user,
-      strategy: "fuzzy_swapped" as const,
-    };
-  }
-
-  return null;
-}
-
 async function createPassengerForGoogleSheetsSync(
   tx: Prisma.TransactionClient,
   input: { firstName: string; lastName: string },
@@ -3338,62 +3213,11 @@ async function ensurePassengerForGoogleSheetsSync(
       });
     }
 
-    return {
-      passenger: matched.passenger,
-      mode: "matched" as const,
-      matchStrategy: matched.strategy,
-    };
-  }
-
-  const matchedUser = await findUserBySyncedName(tx, normalizedInput);
-  if (matchedUser) {
-    let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> | null =
-      matchedUser.user.passengerUserLinks[0]?.passenger ?? null;
-    let mode: GoogleSheetsResolvedPassenger["mode"] = "matched";
-
-    if (!passenger) {
-      passenger = await findPassengerMatchByIdentity(tx, {
-        email: matchedUser.user.email,
-        phone: matchedUser.user.phone,
-      });
-      if (passenger) {
-        await ensurePassengerUserLink(tx, {
-          userId: matchedUser.user.id,
-          passengerId: passenger.id,
-        });
-      }
-    }
-
-    if (!passenger) {
-      passenger = await createPassengerFromTraveler(tx, {
-        sourceType: "USER",
-        user: matchedUser.user,
-      });
-      await ensurePassengerUserLink(tx, {
-        userId: matchedUser.user.id,
-        passengerId: passenger.id,
-      });
-      mode = "created";
-    }
-
-    await createAuditLog(tx, {
-      action: "PASSENGER_MATCHED_FROM_GOOGLE_SHEETS_USER",
-      entityType: "Passenger",
-      entityId: passenger.id,
-      source: AuditSource.IMPORT,
-      newValues: {
-        source: GOOGLE_SHEETS_SYNC_ACTOR,
-        userId: matchedUser.user.id,
-        strategy: matchedUser.strategy,
-        sheetName: normalizedInput.rawDisplayName || buildPassengerDisplayName(normalizedInput),
-      },
-    });
-
-    return {
-      passenger,
-      mode,
-      matchStrategy: matchedUser.strategy,
-    };
+  return {
+    passenger: matched.passenger,
+    mode: "matched" as const,
+    matchStrategy: matched.strategy,
+  };
   }
 
   return {
@@ -3872,11 +3696,6 @@ async function syncFlightSegmentFromGoogleSheets(
   return segmentId;
 }
 
-export type TravelerRefInput = {
-  entityType: "PASSENGER" | "USER" | "DRIVER";
-  entityId: string;
-};
-
 async function ensurePassengerUserLink(tx: Prisma.TransactionClient, input: { userId: string; passengerId: string }) {
   const existing = await tx.passengerUserLink.findFirst({
     where: { userId: input.userId },
@@ -3897,14 +3716,10 @@ async function ensurePassengerUserLink(tx: Prisma.TransactionClient, input: { us
 
 async function findPassengerMatchByIdentity(
   tx: Prisma.TransactionClient,
-  input: { email?: string | null; phone?: string | null },
+  input: { phone?: string | null },
 ) {
-  const normalizedEmail = input.email?.trim().toLowerCase() || null;
   const normalizedPhone = normalizeOptionalPhone(input.phone);
-  const clauses = [
-    normalizedEmail ? { email: normalizedEmail } : undefined,
-    normalizedPhone ? { phone: normalizedPhone } : undefined,
-  ].filter(Boolean) as Prisma.PassengerWhereInput[];
+  const clauses = [normalizedPhone ? { phone: normalizedPhone } : undefined].filter(Boolean) as Prisma.PassengerWhereInput[];
 
   if (clauses.length === 0) {
     return null;
@@ -3922,164 +3737,12 @@ async function findPassengerMatchByIdentity(
   return matches[0];
 }
 
-async function createPassengerFromTraveler(
-  tx: Prisma.TransactionClient,
-  input:
-    | {
-        sourceType: "USER";
-        user: {
-          id: string;
-          firstName: string;
-          lastName: string;
-          email: string;
-          legalName?: string | null;
-          phone?: string | null;
-          profileType?: ProfileType | null;
-          notes?: string | null;
-        };
-        actorUserId?: string | null;
-      }
-    | {
-        sourceType: "DRIVER";
-        driver: {
-          id: string;
-          name: string;
-          phone?: string | null;
-        };
-        actorUserId?: string | null;
-      },
-) {
-  const parsedName =
-    input.sourceType === "USER"
-      ? {
-          firstName: input.user.firstName.trim() || "Traveler",
-          lastName: input.user.lastName.trim() || "Passenger",
-        }
-      : parseDisplayName(input.driver.name);
-
-  const passenger = await tx.passenger.create({
-    data: {
-      firstName: parsedName.firstName?.trim() || "Traveler",
-      lastName: parsedName.lastName?.trim() || "Passenger",
-      email: input.sourceType === "USER" ? input.user.email.toLowerCase() : null,
-      legalName: input.sourceType === "USER" ? input.user.legalName ?? null : null,
-      phone: normalizeOptionalPhone(input.sourceType === "USER" ? input.user.phone : input.driver.phone),
-      notes: input.sourceType === "USER" ? input.user.notes ?? null : null,
-      passengerType:
-        input.sourceType === "USER" ? mapProfileTypeToPassengerType(input.user.profileType) : DEFAULT_AUTO_PASSENGER_TYPE,
-      isActive: true,
-    },
-  });
-
-  await createAuditLog(tx, {
-    action: "PASSENGER_AUTO_CREATED_FOR_TRAVELER",
-    entityType: "Passenger",
-    entityId: passenger.id,
-    actorUserId: input.actorUserId ?? null,
-    source: AuditSource.WEB,
-    newValues: {
-      sourceType: input.sourceType,
-      sourceId: input.sourceType === "USER" ? input.user.id : input.driver.id,
-    },
-  });
-
-  return passenger;
+function dedupePassengerIds(passengerIds?: string[]) {
+  return Array.from(new Set((passengerIds ?? []).filter(Boolean)));
 }
 
-async function resolveTravelerRefsToPassengerIds(
-  tx: Prisma.TransactionClient,
-  input: {
-    passengerIds?: string[];
-    travelerRefs?: TravelerRefInput[];
-    actorUserId?: string | null;
-  },
-) {
-  const resolvedPassengerIds = new Set((input.passengerIds ?? []).filter(Boolean));
-  const resolutionSummary: Array<{ entityType: TravelerRefInput["entityType"]; entityId: string; passengerId: string; mode: string }> = [];
-
-  for (const ref of input.travelerRefs ?? []) {
-    if (ref.entityType === "PASSENGER") {
-      resolvedPassengerIds.add(ref.entityId);
-      resolutionSummary.push({ entityType: ref.entityType, entityId: ref.entityId, passengerId: ref.entityId, mode: "direct" });
-      continue;
-    }
-
-    if (ref.entityType === "USER") {
-      const user = await tx.user.findUniqueOrThrow({
-        where: { id: ref.entityId },
-        include: {
-          passengerUserLinks: {
-            include: { passenger: true },
-            take: 1,
-          },
-        },
-      });
-
-      let passenger: Awaited<ReturnType<typeof findPassengerMatchByIdentity>> = user.passengerUserLinks[0]?.passenger ?? null;
-      let mode = "linked";
-
-      if (!passenger) {
-        passenger = await findPassengerMatchByIdentity(tx, {
-          email: user.email,
-          phone: user.phone,
-        });
-        if (passenger) {
-          await ensurePassengerUserLink(tx, {
-            userId: user.id,
-            passengerId: passenger.id,
-          });
-          mode = "matched";
-        }
-      }
-
-      if (!passenger) {
-        passenger = await createPassengerFromTraveler(tx, {
-          sourceType: "USER",
-          user,
-          actorUserId: input.actorUserId,
-        });
-        await ensurePassengerUserLink(tx, {
-          userId: user.id,
-          passengerId: passenger.id,
-        });
-        mode = "created";
-      }
-
-      resolvedPassengerIds.add(passenger.id);
-      resolutionSummary.push({ entityType: ref.entityType, entityId: ref.entityId, passengerId: passenger.id, mode });
-      continue;
-    }
-
-    const driver = await tx.driver.findUniqueOrThrow({
-      where: { id: ref.entityId },
-    });
-
-    let passenger = await findPassengerMatchByIdentity(tx, {
-      phone: driver.phone,
-    });
-    let mode = passenger ? "matched" : "created";
-
-    if (!passenger) {
-      passenger = await createPassengerFromTraveler(tx, {
-        sourceType: "DRIVER",
-        driver,
-        actorUserId: input.actorUserId,
-      });
-    }
-
-    resolvedPassengerIds.add(passenger.id);
-    resolutionSummary.push({ entityType: ref.entityType, entityId: ref.entityId, passengerId: passenger.id, mode });
-  }
-
-  return {
-    passengerIds: Array.from(resolvedPassengerIds),
-    resolutionSummary,
-  };
-}
-
-async function syncPassengerUserLink(tx: Prisma.TransactionClient, input: { userId: string; email: string; phone?: string | null }) {
+async function syncPassengerUserLink(tx: Prisma.TransactionClient, input: { userId: string; phone?: string | null }) {
   const match = await findPassengerMatchByIdentity(tx, {
-    email: input.email,
     phone: input.phone,
   });
 
@@ -4114,7 +3777,6 @@ type TripTransportEntryInput = {
 type TripInput = {
   notes?: string | null;
   passengerIds: string[];
-  travelerRefs?: TravelerRefInput[];
   createdByUserId?: string | null;
   booking?: {
     confirmationNumber?: string | null;

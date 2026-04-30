@@ -28,7 +28,6 @@ export default async function DriversPage() {
           id: driver.id,
           name: driver.name,
           phone: driver.phone,
-          profileType: driver.profileType,
           notes: driver.notes,
           telegramChatId: driver.telegramChatId,
           telegramUsername: driver.telegramUsername,

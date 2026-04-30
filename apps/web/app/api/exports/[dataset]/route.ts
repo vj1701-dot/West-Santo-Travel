@@ -1,4 +1,4 @@
-import { exportDrivers, exportPassengers, exportTrips, exportUsers } from "@west-santo/data";
+﻿import { exportDrivers, exportPassengers, exportTrips, exportUsers } from "@west-santo/data";
 
 import { fail } from "@/lib/api/response";
 import { requireApiRole } from "@/lib/auth/guards";
@@ -54,7 +54,6 @@ export async function GET(_: Request, context: { params: Promise<{ dataset: stri
       firstName: passenger.firstName,
       lastName: passenger.lastName,
       legalName: passenger.legalName ?? "",
-      email: passenger.email ?? "",
       phone: passenger.phone ?? "",
       passengerType: passenger.passengerType,
       telegramChatId: passenger.telegramChatId ?? "",
@@ -83,16 +82,13 @@ export async function GET(_: Request, context: { params: Promise<{ dataset: stri
       userId: user.id,
       firstName: user.firstName,
       lastName: user.lastName,
-      legalName: user.legalName ?? "",
       email: user.email,
       phone: user.phone ?? "",
       role: user.role,
-      profileType: user.profileType ?? "",
       isActive: user.isActive,
       airports: [...user.adminAirports, ...user.coordinatorAirports].map((assignment) => assignment.airport.code).join(" | "),
       telegramChatId: user.telegramChatId ?? "",
       telegramUsername: user.telegramUsername ?? "",
-      notes: user.notes ?? "",
     }));
   } else {
     return fail("NOT_FOUND", "Unknown export dataset.", 404);
@@ -106,3 +102,4 @@ export async function GET(_: Request, context: { params: Promise<{ dataset: stri
     },
   });
 }
+

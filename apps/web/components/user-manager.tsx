@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -17,12 +17,9 @@ type UserRecord = {
   id: string;
   firstName: string;
   lastName: string;
-  legalName: string | null;
   email: string;
   phone: string | null;
-  notes: string | null;
   role: "ADMIN" | "COORDINATOR" | "PASSENGER";
-  profileType: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | null;
   excludeFromCoordinatorMessages: boolean;
   isActive: boolean;
   telegramChatId: string | null;
@@ -38,12 +35,9 @@ type UserRecord = {
 type FormState = {
   firstName: string;
   lastName: string;
-  legalName: string;
   email: string;
   phone: string;
-  notes: string;
   role: "ADMIN" | "COORDINATOR" | "PASSENGER";
-  profileType: "" | "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO";
   excludeFromCoordinatorMessages: boolean;
   airportIds: string[];
   isActive: boolean;
@@ -54,12 +48,9 @@ type FormState = {
 const emptyForm: FormState = {
   firstName: "",
   lastName: "",
-  legalName: "",
   email: "",
   phone: "",
-  notes: "",
   role: "COORDINATOR",
-  profileType: "",
   excludeFromCoordinatorMessages: false,
   airportIds: [],
   isActive: true,
@@ -71,12 +62,9 @@ function toFormState(user: UserRecord): FormState {
   return {
     firstName: user.firstName,
     lastName: user.lastName,
-    legalName: user.legalName ?? "",
     email: user.email,
     phone: user.phone ?? "",
-    notes: user.notes ?? "",
     role: user.role,
-    profileType: user.profileType ?? "",
     excludeFromCoordinatorMessages: user.excludeFromCoordinatorMessages,
     airportIds: user.airportIds,
     isActive: user.isActive,
@@ -108,12 +96,17 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
 
   const filteredUsers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return users;
-    return users.filter((user) =>
-      [user.firstName, user.lastName, user.legalName ?? "", user.email, user.phone ?? "", user.notes ?? "", user.role, user.profileType ?? ""]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+    const matches = query
+      ? users.filter((user) =>
+          [user.firstName, user.lastName, user.email, user.phone ?? "", user.role]
+            .join(" ")
+            .toLowerCase()
+            .includes(query),
+        )
+      : users;
+
+    return [...matches].sort((left, right) =>
+      `${left.firstName} ${left.lastName}`.localeCompare(`${right.firstName} ${right.lastName}`),
     );
   }, [users, search]);
 
@@ -153,12 +146,9 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     const ok = await submitJson("/api/users", "POST", {
       firstName: formState.firstName,
       lastName: formState.lastName,
-      legalName: formState.legalName || null,
       email: formState.email,
       phone: formState.phone || null,
-      notes: formState.notes || null,
       role: formState.role,
-      profileType: formState.profileType || null,
       excludeFromCoordinatorMessages: formState.excludeFromCoordinatorMessages,
       airportIds: formState.airportIds,
     });
@@ -175,12 +165,9 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
     await submitJson(`/api/users/${editingUser.id}`, "PATCH", {
       firstName: formState.firstName,
       lastName: formState.lastName,
-      legalName: formState.legalName || null,
       email: formState.email,
       phone: formState.phone || null,
-      notes: formState.notes || null,
       role: formState.role,
-      profileType: formState.profileType || null,
       excludeFromCoordinatorMessages: formState.excludeFromCoordinatorMessages,
       airportIds: formState.airportIds,
       isActive: formState.isActive,
@@ -276,7 +263,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 Edit {editingUser.firstName} {editingUser.lastName}
               </h3>
               <p className="notes" style={{ marginTop: "0.35rem" }}>
-                Identity: {editingUser.identityLinkedAt ? editingUser.identityProvider ?? "Linked" : "Pending first login"} · Passenger link:{" "}
+                Identity: {editingUser.identityLinkedAt ? editingUser.identityProvider ?? "Linked" : "Pending first login"} Â· Passenger link:{" "}
                 {editingUser.linkedPassengerName ?? "Not linked"}
               </p>
             </div>
@@ -318,7 +305,6 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
           <tr>
             <th>User</th>
             <th>Role</th>
-            <th>Type</th>
             <th>Messages</th>
             <th>Airports</th>
             <th>Identity</th>
@@ -332,10 +318,9 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
                 <strong>
                   {user.firstName} {user.lastName}
                 </strong>
-                <div className="muted-inline">{user.phone ?? user.email ?? user.legalName ?? "No contact"}</div>
+                <div className="muted-inline">{user.phone ?? user.email ?? "No contact"}</div>
               </td>
               <td>{user.role}</td>
-              <td>{user.profileType ? user.profileType.replace(/_/g, " ") : "Not set"}</td>
               <td>{user.role === "COORDINATOR" && user.excludeFromCoordinatorMessages ? "Excluded" : "Active"}</td>
               <td>{user.airportCodes.join(", ") || "None"}</td>
               <td>{user.identityLinkedAt ? user.identityProvider ?? "Linked" : "Pending first login"}</td>
@@ -364,7 +349,7 @@ export function UserManager({ users, airports }: { users: UserRecord[]; airports
           ))}
           {filteredUsers.length === 0 ? (
             <tr>
-              <td colSpan={7}>No users found.</td>
+              <td colSpan={6}>No users found.</td>
             </tr>
           ) : null}
         </tbody>
@@ -398,10 +383,6 @@ function UserFields({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="field">
-          <span>Legal name</span>
-          <input value={formState.legalName} onChange={(event) => onChange("legalName", event.target.value)} />
-        </label>
-        <label className="field">
           <span>Email used for login</span>
           <input type="email" value={formState.email} onChange={(event) => onChange("email", event.target.value)} required />
         </label>
@@ -419,20 +400,7 @@ function UserFields({
             <option value="PASSENGER">Passenger</option>
           </select>
         </label>
-        <label className="field">
-          <span>Type</span>
-          <select value={formState.profileType} onChange={(event) => onChange("profileType", event.target.value as FormState["profileType"])}>
-            <option value="">Not set</option>
-            <option value="WEST_SANTO">West Santo</option>
-            <option value="GUEST_SANTO">Guest Santo</option>
-            <option value="HARIBHAKTO">Haribhakt</option>
-          </select>
-        </label>
       </div>
-      <label className="field">
-        <span>Food / diet / notes</span>
-        <textarea rows={4} value={formState.notes} onChange={(event) => onChange("notes", event.target.value)} />
-      </label>
       <div className="grid gap-3 sm:grid-cols-2">
         {includeActive ? (
           <label className="checkbox" style={{ alignSelf: "end" }}>
@@ -465,3 +433,4 @@ function UserFields({
     </>
   );
 }
+

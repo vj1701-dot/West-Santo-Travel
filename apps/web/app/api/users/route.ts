@@ -1,4 +1,4 @@
-import { ProfileType, UserRole } from "@prisma/client";
+﻿import { UserRole } from "@prisma/client";
 import { createUser, listUsers } from "@west-santo/data";
 import { z } from "zod";
 
@@ -10,10 +10,7 @@ const createUserSchema = z.object({
   phone: z.string().nullable().optional(),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  legalName: z.string().nullable().optional(),
-  notes: z.string().nullable().optional(),
   role: z.nativeEnum(UserRole),
-  profileType: z.nativeEnum(ProfileType).nullable().optional(),
   excludeFromCoordinatorMessages: z.boolean().optional(),
   airportIds: z.array(z.string().uuid()).optional(),
 });
@@ -38,3 +35,6 @@ export async function POST(request: Request) {
 
   return ok(await createUser(parsed.data), { status: 201 });
 }
+
+
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
@@ -8,7 +8,6 @@ type PassengerRecord = {
   firstName: string;
   lastName: string;
   legalName: string | null;
-  email: string | null;
   phone: string | null;
   passengerType: string;
   notes: string | null;
@@ -21,7 +20,6 @@ type FormState = {
   firstName: string;
   lastName: string;
   legalName: string;
-  email: string;
   phone: string;
   passengerType: string;
   notes: string;
@@ -33,7 +31,6 @@ const emptyForm: FormState = {
   firstName: "",
   lastName: "",
   legalName: "",
-  email: "",
   phone: "",
   passengerType: "WEST_SANTO",
   notes: "",
@@ -46,7 +43,6 @@ function toFormState(passenger: PassengerRecord): FormState {
     firstName: passenger.firstName,
     lastName: passenger.lastName,
     legalName: passenger.legalName ?? "",
-    email: passenger.email ?? "",
     phone: passenger.phone ?? "",
     passengerType: passenger.passengerType === "EXTRA_SEAT" ? "HARIBHAKTO" : passenger.passengerType,
     notes: passenger.notes ?? "",
@@ -66,19 +62,23 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
 
   const filteredPassengers = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return passengers;
-    return passengers.filter((passenger) =>
-      [
-        passenger.firstName,
-        passenger.lastName,
-        passenger.legalName ?? "",
-        passenger.email ?? "",
-        passenger.phone ?? "",
-        passenger.passengerType,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(query),
+    const matches = query
+      ? passengers.filter((passenger) =>
+          [
+            passenger.firstName,
+            passenger.lastName,
+            passenger.legalName ?? "",
+            passenger.phone ?? "",
+            passenger.passengerType,
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(query),
+        )
+      : passengers;
+
+    return [...matches].sort((left, right) =>
+      `${left.firstName} ${left.lastName}`.localeCompare(`${right.firstName} ${right.lastName}`),
     );
   }, [passengers, search]);
 
@@ -121,7 +121,6 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
       firstName: formState.firstName,
       lastName: formState.lastName,
       legalName: formState.legalName || null,
-      email: formState.email || null,
       phone: formState.phone || null,
       passengerType: formState.passengerType,
       notes: formState.notes || null,
@@ -140,7 +139,6 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
       firstName: formState.firstName,
       lastName: formState.lastName,
       legalName: formState.legalName || null,
-      email: formState.email || null,
       phone: formState.phone || null,
       passengerType: formState.passengerType,
       notes: formState.notes || null,
@@ -194,7 +192,7 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
         <label className="field" style={{ flex: 1 }}>
           <span>Search passengers</span>
           <input
-            placeholder="Search by name, phone, email, or type"
+            placeholder="Search by name, phone, or type"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
@@ -236,7 +234,7 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
                 Edit {editingPassenger.firstName} {editingPassenger.lastName}
               </h3>
               <p className="notes" style={{ marginTop: "0.35rem" }}>
-                Trips: {editingPassenger.itineraryCount} · Telegram: {editingPassenger.telegramChatId ?? "Not linked"}
+                Trips: {editingPassenger.itineraryCount} Â· Telegram: {editingPassenger.telegramChatId ?? "Not linked"}
               </p>
             </div>
             <button className="button-secondary" type="button" onClick={closePanel}>
@@ -291,7 +289,7 @@ export function PassengerManager({ passengers }: { passengers: PassengerRecord[]
                   {passenger.firstName} {passenger.lastName}
                 </strong>
                 <div className="muted-inline">
-                  {passenger.phone ?? passenger.email ?? passenger.legalName ?? "No contact"}
+                  {passenger.phone ?? passenger.legalName ?? "No contact"}
                 </div>
               </td>
               <td>{passenger.passengerType}</td>
@@ -356,12 +354,6 @@ function PassengerFields({
           <input value={formState.legalName} onChange={(event) => onChange("legalName", event.target.value)} />
         </label>
         <label className="field">
-          <span>Email</span>
-          <input type="email" value={formState.email} onChange={(event) => onChange("email", event.target.value)} />
-        </label>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="field">
           <span>Phone</span>
           <input value={formState.phone} onChange={(event) => onChange("phone", event.target.value)} />
         </label>
@@ -381,3 +373,4 @@ function PassengerFields({
     </>
   );
 }
+

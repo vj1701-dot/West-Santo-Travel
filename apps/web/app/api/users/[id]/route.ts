@@ -1,4 +1,4 @@
-import { ProfileType, UserRole } from "@prisma/client";
+﻿import { UserRole } from "@prisma/client";
 import { updateUser } from "@west-santo/data";
 import { z } from "zod";
 
@@ -10,10 +10,7 @@ const updateUserSchema = z.object({
   phone: z.string().nullable().optional(),
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
-  legalName: z.string().nullable().optional(),
-  notes: z.string().nullable().optional(),
   role: z.nativeEnum(UserRole).optional(),
-  profileType: z.nativeEnum(ProfileType).nullable().optional(),
   excludeFromCoordinatorMessages: z.boolean().optional(),
   isActive: z.boolean().optional(),
   airportIds: z.array(z.string().uuid()).optional(),
@@ -39,3 +36,6 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
   const { id } = await context.params;
   return ok(await updateUser(id, { isActive: false }));
 }
+
+
+

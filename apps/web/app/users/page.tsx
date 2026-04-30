@@ -1,4 +1,4 @@
-import { listAirports, listUsers } from "@west-santo/data";
+﻿import { listAirports, listUsers } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -34,12 +34,9 @@ export default async function UsersPage() {
           id: user.id,
           firstName: user.firstName,
           lastName: user.lastName,
-          legalName: user.legalName,
           email: user.email,
           phone: user.phone,
-          notes: user.notes,
           role: user.role,
-          profileType: user.profileType,
           excludeFromCoordinatorMessages: user.excludeFromCoordinatorMessages,
           isActive: user.isActive,
           telegramChatId: user.telegramChatId,
@@ -58,3 +55,6 @@ export default async function UsersPage() {
     </AppShell>
   );
 }
+
+
+

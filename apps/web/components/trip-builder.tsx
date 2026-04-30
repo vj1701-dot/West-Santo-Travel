@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -10,12 +10,6 @@ import { SearchCombobox } from "./search-combobox";
 import { AIRLINE_OPTIONS } from "@/lib/airlines";
 
 type PassengerOption = {
-  id: string;
-  label: string;
-  detail?: string;
-};
-
-type UserOption = {
   id: string;
   label: string;
   detail?: string;
@@ -54,10 +48,6 @@ type InitialTripData = {
   id?: string;
   notes?: string | null;
   passengerIds: string[];
-  travelerRefs?: Array<{
-    entityType: "PASSENGER" | "USER" | "DRIVER";
-    entityId: string;
-  }>;
   booking?: {
     confirmationNumber?: string | null;
     totalCost?: number | null;
@@ -82,7 +72,6 @@ type InitialTripData = {
 
 type TripBuilderProps = {
   passengers: PassengerOption[];
-  users: UserOption[];
   drivers: DriverOption[];
   airports: AirportChoice[];
   initialTrip?: InitialTripData;
@@ -97,11 +86,6 @@ type SearchOption = {
   id: string;
   label: string;
   detail?: string;
-};
-
-type TravelerRef = {
-  entityType: "PASSENGER" | "USER" | "DRIVER";
-  entityId: string;
 };
 
 type TravelerQuickAddForm = {
@@ -171,7 +155,6 @@ function parseTravelerName(query: string): Pick<TravelerQuickAddForm, "firstName
 
 export function TripBuilder({
   passengers,
-  users,
   drivers,
   airports,
   initialTrip,
@@ -186,7 +169,6 @@ export function TripBuilder({
   const [message, setMessage] = useState("");
   const [passengerOptions, setPassengerOptions] = useState<PassengerOption[]>(passengers);
   const [selectedPassengerIds, setSelectedPassengerIds] = useState<string[]>(initialTrip?.passengerIds ?? []);
-  const [selectedTravelerRefs, setSelectedTravelerRefs] = useState<TravelerRef[]>(initialTrip?.travelerRefs ?? []);
   const [travelerQuery, setTravelerQuery] = useState("");
   const [isTravelerQuickAddOpen, setIsTravelerQuickAddOpen] = useState(false);
   const [travelerQuickAddForm, setTravelerQuickAddForm] = useState<TravelerQuickAddForm>({
@@ -208,11 +190,8 @@ export function TripBuilder({
   const [driverOptions, setDriverOptions] = useState<DriverOption[]>(drivers);
 
   const passengerOptionMap = useMemo(() => new Map(passengerOptions.map((passenger) => [passenger.id, passenger])), [passengerOptions]);
-  const userOptionMap = useMemo(() => new Map(users.map((user) => [user.id, user])), [users]);
-  const driverOptionMap = useMemo(() => new Map(driverOptions.map((driver) => [driver.id, driver])), [driverOptions]);
   const selectedTravelerKeys = new Set([
     ...selectedPassengerIds.map((passengerId) => `PASSENGER:${passengerId}`),
-    ...selectedTravelerRefs.map((ref) => `${ref.entityType}:${ref.entityId}`),
   ]);
   const availableTravelerOptions: SearchOption[] = [
     ...passengerOptions
@@ -222,39 +201,12 @@ export function TripBuilder({
         label: passenger.label,
         detail: ["Passenger", passenger.detail].filter(Boolean).join(" · "),
       })),
-    ...users
-      .filter((user) => !selectedTravelerKeys.has(`USER:${user.id}`))
-      .map((user) => ({
-        id: `USER:${user.id}`,
-        label: user.label,
-        detail: ["User", user.detail].filter(Boolean).join(" · "),
-      })),
-    ...driverOptions
-      .filter((driver) => !selectedTravelerKeys.has(`DRIVER:${driver.id}`))
-      .map((driver) => ({
-        id: `DRIVER:${driver.id}`,
-        label: driver.name,
-        detail: ["Driver", driver.phone, driver.airportCodes?.join(", ")].filter(Boolean).join(" · "),
-      })),
   ];
   const selectedTravelers = [
     ...selectedPassengerIds.map((passengerId) => ({
       key: `PASSENGER:${passengerId}`,
       label: passengerOptionMap.get(passengerId)?.label ?? "Unknown traveler",
     })),
-    ...selectedTravelerRefs.map((ref) => {
-      if (ref.entityType === "USER") {
-        return {
-          key: `USER:${ref.entityId}`,
-          label: userOptionMap.get(ref.entityId)?.label ?? "Unknown traveler",
-        };
-      }
-
-      return {
-        key: `DRIVER:${ref.entityId}`,
-        label: driverOptionMap.get(ref.entityId)?.name ?? "Unknown traveler",
-      };
-    }),
   ];
   const airlineOptions = AIRLINE_OPTIONS.map((airline) => ({ id: airline, label: airline }));
   const driverSearchOptions = driverOptions.map((driver) => ({
@@ -262,7 +214,7 @@ export function TripBuilder({
     label: driver.name,
     detail: [driver.phone, driver.airportCodes?.join(", ")].filter(Boolean).join(" · "),
   }));
-  const totalTravelers = selectedPassengerIds.length + selectedTravelerRefs.length;
+  const totalTravelers = selectedPassengerIds.length;
   const totalTransportEntries = segments.reduce(
     (count, segment) => count + segment.pickupEntries.length + segment.dropoffEntries.length,
     0,
@@ -328,9 +280,6 @@ export function TripBuilder({
       return;
     }
 
-    if (entityType === "USER" || entityType === "DRIVER") {
-      setSelectedTravelerRefs((current) => current.filter((item) => `${item.entityType}:${item.entityId}` !== key));
-    }
   }
 
   function handleTravelerSelect(option: SearchOption) {
@@ -341,12 +290,6 @@ export function TripBuilder({
 
     if (entityType === "PASSENGER") {
       setSelectedPassengerIds((current) => (current.includes(entityId) ? current : [...current, entityId]));
-    } else if (entityType === "USER" || entityType === "DRIVER") {
-      setSelectedTravelerRefs((current) =>
-        current.some((item) => item.entityType === entityType && item.entityId === entityId)
-          ? current
-          : [...current, { entityType, entityId }],
-      );
     }
 
     closeTravelerQuickAdd();
@@ -365,7 +308,6 @@ export function TripBuilder({
         firstName: travelerQuickAddForm.firstName.trim(),
         lastName: travelerQuickAddForm.lastName.trim(),
         legalName: null,
-        email: null,
         phone: travelerQuickAddForm.phone.trim(),
         passengerType: "HARIBHAKTO",
         notes: null,
@@ -383,7 +325,7 @@ export function TripBuilder({
       {
         id: result.id,
         label: buildFullName(result.firstName, result.lastName),
-        detail: result.phone ?? result.email ?? result.legalName ?? result.passengerType,
+        detail: result.phone ?? result.legalName ?? result.passengerType,
       },
     ]);
     setSelectedPassengerIds((current) => (current.includes(result.id) ? current : [...current, result.id]));
@@ -437,7 +379,7 @@ export function TripBuilder({
         !segment.arrivalTimeLocal,
     );
 
-    if (selectedPassengerIds.length === 0 && selectedTravelerRefs.length === 0) {
+    if (selectedPassengerIds.length === 0) {
       setMessage("Select at least one traveler.");
       return;
     }
@@ -450,7 +392,6 @@ export function TripBuilder({
     const payload = {
       notes: tripNote.trim() || null,
       passengerIds: selectedPassengerIds,
-      travelerRefs: selectedTravelerRefs,
       booking: bookingId.trim() || totalPrice.trim() ? { confirmationNumber: bookingId.trim() || null, totalCost: totalPrice.trim() ? Number(totalPrice) : null } : null,
       accommodation: accommodationNote.trim() ? { notes: accommodationNote.trim() } : null,
       segments: segments.map((segment, index) => ({
@@ -500,11 +441,9 @@ export function TripBuilder({
               <div>
                 <strong style={{ fontSize: "1rem", color: "var(--slate-900)" }}>Travelers</strong>
                 <p style={{ fontSize: "0.875rem", color: "var(--slate-500)", margin: "0.25rem 0 0 0" }}>
-                  {selectedPassengerIds.length + selectedTravelerRefs.length === 0
-                    ? "Search passengers, users, or drivers and add them to this trip"
-                    : `${selectedPassengerIds.length + selectedTravelerRefs.length} traveler${
-                        selectedPassengerIds.length + selectedTravelerRefs.length === 1 ? "" : "s"
-                      } selected`}
+                  {selectedPassengerIds.length === 0
+                    ? "Search passengers and add them to this trip"
+                    : `${selectedPassengerIds.length} traveler${selectedPassengerIds.length === 1 ? "" : "s"} selected`}
                 </p>
               </div>
             </AccordionTrigger>
@@ -658,7 +597,7 @@ export function TripBuilder({
                       <div>
                         <p className="eyebrow">Segment {index + 1}</p>
                         <h3 style={{ fontSize: "1rem", fontWeight: "600", color: "var(--slate-900)", margin: 0 }}>
-                          {segment.departureAirport?.code ?? "DEP"} → {segment.arrivalAirport?.code ?? "ARR"}
+                          {segment.departureAirport?.code ?? "DEP"} ? {segment.arrivalAirport?.code ?? "ARR"}
                         </h3>
                       </div>
                       {segments.length > 1 ? (
@@ -770,7 +709,7 @@ export function TripBuilder({
                     <div className="row-card__title">
                       <div>
                         <p className="eyebrow">Segment {index + 1}</p>
-                        <h3 style={{ margin: 0 }}>{segment.departureAirport?.code ?? "DEP"} → {segment.arrivalAirport?.code ?? "ARR"}</h3>
+                        <h3 style={{ margin: 0 }}>{segment.departureAirport?.code ?? "DEP"} ? {segment.arrivalAirport?.code ?? "ARR"}</h3>
                       </div>
                       <button
                         className="button-secondary"
@@ -990,3 +929,4 @@ function DriverMultiSelect({
     </div>
   );
 }
+

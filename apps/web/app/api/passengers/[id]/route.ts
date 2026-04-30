@@ -1,4 +1,4 @@
-import { disablePassenger, getPassenger, updatePassenger } from "@west-santo/data";
+﻿import { disablePassenger, getPassenger, updatePassenger } from "@west-santo/data";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
@@ -8,7 +8,6 @@ const updatePassengerSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
   legalName: z.string().nullable().optional(),
-  email: z.string().email().nullable().optional(),
   phone: z.string().nullable().optional(),
   passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO"]).optional(),
   notes: z.string().nullable().optional(),
@@ -41,3 +40,4 @@ export async function DELETE(_: Request, context: { params: Promise<{ id: string
   const { id } = await context.params;
   return ok(await disablePassenger(id));
 }
+

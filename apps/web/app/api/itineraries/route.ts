@@ -1,21 +1,15 @@
-import { createItinerary, createTrip, listItineraries } from "@west-santo/data";
+﻿import { createItinerary, createTrip, listItineraries } from "@west-santo/data";
 import { TransportTaskType } from "@prisma/client";
 import { z } from "zod";
 
 import { fail, ok } from "@/lib/api/response";
 import { requireApiRoles } from "@/lib/auth/guards";
 
-const travelerRefSchema = z.object({
-  entityType: z.enum(["PASSENGER", "USER", "DRIVER"]),
-  entityId: z.string().uuid(),
-});
-
 const createItinerarySchema = z.object({
   notes: z.string().nullable().optional(),
   passengerIds: z.array(z.string().uuid()).default([]),
-  travelerRefs: z.array(travelerRefSchema).default([]),
   createdByUserId: z.string().uuid().nullable().optional(),
-}).refine((value) => value.passengerIds.length > 0 || value.travelerRefs.length > 0, {
+}).refine((value) => value.passengerIds.length > 0, {
   message: "Select at least one traveler.",
   path: ["passengerIds"],
 });
@@ -23,7 +17,6 @@ const createItinerarySchema = z.object({
 const createTripSchema = z.object({
   notes: z.string().nullable().optional(),
   passengerIds: z.array(z.string().uuid()).default([]),
-  travelerRefs: z.array(travelerRefSchema).default([]),
   booking: z
     .object({
       confirmationNumber: z.string().nullable().optional(),
@@ -60,7 +53,7 @@ const createTripSchema = z.object({
       }),
     )
     .min(1),
-}).refine((value) => value.passengerIds.length > 0 || value.travelerRefs.length > 0, {
+}).refine((value) => value.passengerIds.length > 0, {
   message: "Select at least one traveler.",
   path: ["passengerIds"],
 });
@@ -98,3 +91,4 @@ export async function POST(request: Request) {
   });
   return ok(itinerary, { status: 201 });
 }
+

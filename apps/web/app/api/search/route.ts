@@ -1,4 +1,4 @@
-import { listDrivers, listItineraries, listPassengerItineraries, listPassengers, listUsers } from "@west-santo/data";
+﻿import { listDrivers, listItineraries, listPassengerItineraries, listPassengers, listUsers } from "@west-santo/data";
 
 import { ok } from "@/lib/api/response";
 import { requireApiUser } from "@/lib/auth/guards";
@@ -93,7 +93,7 @@ export async function GET(request: Request) {
         id: `passenger:${passenger.id}`,
         href: "/passengers",
         title: `${passenger.firstName} ${passenger.lastName}`,
-        detail: passenger.phone ?? passenger.email ?? passenger.passengerType,
+        detail: passenger.phone ?? passenger.passengerType,
         type: "Passenger" as const,
       })),
     );
@@ -116,7 +116,7 @@ export async function GET(request: Request) {
         id: `user:${item.id}`,
         href: "/users",
         title: `${item.firstName} ${item.lastName}`,
-        detail: [item.role, item.profileType?.replace(/_/g, " "), item.phone ?? item.email, item.legalName].filter(Boolean).join(" - "),
+        detail: [item.role, item.phone ?? item.email].filter(Boolean).join(" - "),
         type: "User" as const,
       })),
     );
@@ -124,3 +124,4 @@ export async function GET(request: Request) {
 
   return ok(results.slice(0, 18));
 }
+
