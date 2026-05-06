@@ -30,6 +30,28 @@ export default async function SubmissionPage() {
           </Link>
         </div>
       </section>
+      <section
+        className="dashboard-card stack"
+        style={{
+          maxWidth: "900px",
+          margin: "0 auto 1.5rem",
+          background: "rgba(255, 255, 255, 0.94)",
+        }}
+      >
+        <div>
+          <p className="eyebrow">Messaging Consent</p>
+          <h2 style={{ marginTop: "0.35rem", color: "var(--ink-900)", fontSize: "1.25rem" }}>How text message consent works</h2>
+        </div>
+        <ol style={{ margin: 0, paddingLeft: "1.25rem", color: "var(--ink-700)", lineHeight: 1.7 }}>
+          <li>Visit this public page and enter travel details and the mobile phone number(s) to be used for coordination.</li>
+          <li>Review the SMS/MMS disclosure and the links to the Privacy Policy and Terms &amp; Conditions.</li>
+          <li>Check the consent box before submitting the form. The form cannot be submitted without that consent.</li>
+          <li>After consent is given, West Santo Travel may send operational travel reminders, schedule updates, and transport coordination messages.</li>
+        </ol>
+        <p className="notes">
+          No login is required. Message frequency varies. Message and data rates may apply. Reply <strong>STOP</strong> to opt out or <strong>HELP</strong> for help.
+        </p>
+      </section>
       <PublicSubmissionForm
         airports={airports.map((airport) => ({
           id: airport.id,

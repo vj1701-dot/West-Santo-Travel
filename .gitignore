@@ -13,4 +13,8 @@ coverage
 .vscode/mcp.json
 skills
 .vscode
+.codex/hooks.json
+graphify-out/
+raw/
+AGENTS.md
 

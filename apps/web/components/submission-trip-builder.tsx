@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Plus, Trash2 } from "lucide-react";
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -162,6 +163,7 @@ export function SubmissionTripBuilder({
   const [submitterName, setSubmitterName] = useState(initialValue?.submitterName ?? "");
   const [submitterPhone, setSubmitterPhone] = useState(initialValue?.submitterPhone ?? "");
   const [notes, setNotes] = useState(initialValue?.notes ?? "");
+  const [hasMessagingConsent, setHasMessagingConsent] = useState(false);
   const [bookingId, setBookingId] = useState(initialValue?.booking?.confirmationNumber ?? "");
   const [totalPrice, setTotalPrice] = useState(initialValue?.booking?.totalCost?.toString() ?? "");
   const [accommodationNote, setAccommodationNote] = useState(initialValue?.accommodation?.notes ?? "");
@@ -224,6 +226,11 @@ export function SubmissionTripBuilder({
 
     if (!submitterName.trim()) {
       setMessage("Enter the submitter name.");
+      return;
+    }
+
+    if (mode === "public" && !hasMessagingConsent) {
+      setMessage("You must agree to receive operational SMS/MMS messages before submitting.");
       return;
     }
 
@@ -343,6 +350,36 @@ export function SubmissionTripBuilder({
                 <input value={submitterPhone} onChange={(event) => setSubmitterPhone(event.target.value)} />
               </label>
             </div>
+            {mode === "public" ? (
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "0.75rem",
+                  marginTop: "0.9rem",
+                  padding: "0.9rem 1rem",
+                  border: "1px solid var(--accent-200)",
+                  borderRadius: "14px",
+                  background: "rgba(255, 255, 255, 0.92)",
+                  color: "var(--ink-700)",
+                  lineHeight: 1.6,
+                }}
+              >
+                <input
+                  checked={hasMessagingConsent}
+                  onChange={(event) => setHasMessagingConsent(event.target.checked)}
+                  style={{ marginTop: "0.2rem" }}
+                  type="checkbox"
+                />
+                <span>
+                  I agree and confirm that I am authorized to provide the phone number(s) entered in this form. West Santo Travel may send
+                  operational SMS/MMS messages to those phone number(s) for travel reminders, schedule changes, and transport coordination.
+                  Message frequency varies. Message and data rates may apply. Reply STOP to opt out or HELP for help. View the{" "}
+                  <Link href="/privacy-policy">Privacy Policy</Link> and{" "}
+                  <Link href="/terms-and-conditions">Terms &amp; Conditions</Link>.
+                </span>
+              </label>
+            ) : null}
             <label className="field" style={{ marginTop: "0.75rem" }}>
               <span>{mode === "public" ? "Notes for admin review" : "Trip note"}</span>
               <textarea rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} />
