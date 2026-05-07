@@ -68,6 +68,9 @@ services:
       DATABASE_URL: ${DOCKER_DATABASE_URL:-postgresql://postgres:postgres@db:5432/west_santo_travel?schema=public}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       BOT_HEALTH_POLL_MS: ${BOT_HEALTH_POLL_MS:-60000}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
 
   scheduler:
     build:

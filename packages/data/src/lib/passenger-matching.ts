@@ -121,6 +121,22 @@ function pickConfidentMatch(entries: ScoredPassengerCandidate[], threshold = 0.9
   return { winner: null, candidates: scored };
 }
 
+function pickAmbiguousCandidates(entries: ScoredPassengerCandidate[], threshold = 0.75) {
+  const scored = entries
+    .filter((entry) => entry.score >= threshold)
+    .sort((left, right) => right.score - left.score);
+
+  if (scored.length < 2) {
+    return null;
+  }
+
+  if (scored[0].score - scored[1].score < 0.05) {
+    return scored;
+  }
+
+  return null;
+}
+
 export function matchPassengerByName(
   passengers: PassengerNameRecord[],
   input: { firstName: string; lastName: string },
@@ -205,6 +221,15 @@ export function matchPassengerByName(
       candidates: summarizeCandidates(fuzzyFullMatch.candidates),
     };
   }
+  const fuzzyFullAmbiguous = pickAmbiguousCandidates(fuzzyFullScores);
+  if (fuzzyFullAmbiguous) {
+    return {
+      status: "AMBIGUOUS",
+      passenger: null,
+      strategy: null,
+      candidates: summarizeCandidates(fuzzyFullAmbiguous),
+    };
+  }
 
   const fuzzySwappedScores = passengers.map((passenger) => ({
     passenger,
@@ -228,6 +253,15 @@ export function matchPassengerByName(
       passenger: null,
       strategy: null,
       candidates: summarizeCandidates(fuzzySwappedMatch.candidates),
+    };
+  }
+  const fuzzySwappedAmbiguous = pickAmbiguousCandidates(fuzzySwappedScores);
+  if (fuzzySwappedAmbiguous) {
+    return {
+      status: "AMBIGUOUS",
+      passenger: null,
+      strategy: null,
+      candidates: summarizeCandidates(fuzzySwappedAmbiguous),
     };
   }
 
