@@ -5787,3 +5787,67 @@ export async function queueOneOffFlightReminder(input: {
     return { queued, text: passengerText };
   });
 }
+
+export async function listRecentNotificationLogs(limit = 50, options?: { airportIds?: string[] | null }) {
+  const airportIds = options?.airportIds?.filter(Boolean) ?? [];
+  const where =
+    airportIds.length > 0
+      ? {
+          OR: [
+            {
+              recipientPassenger: {
+                itineraryPassengers: {
+                  some: {
+                    itinerary: {
+                      flightSegments: {
+                        some: {
+                          OR: [
+                            { departureAirportId: { in: airportIds } },
+                            { arrivalAirportId: { in: airportIds } },
+                          ],
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            {
+              recipientDriver: {
+                driverAirports: {
+                  some: {
+                    airportId: { in: airportIds },
+                  },
+                },
+              },
+            },
+          ],
+        }
+      : undefined;
+
+  return prisma.notificationLog.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    include: {
+      recipientPassenger: {
+        select: {
+          firstName: true,
+          lastName: true,
+        },
+      },
+      recipientDriver: {
+        select: {
+          name: true,
+        },
+      },
+      recipientUser: {
+        select: {
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+    },
+  });
+}

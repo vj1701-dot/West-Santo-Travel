@@ -11,18 +11,33 @@ const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
 const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
 const twilioFromNumber = process.env.TWILIO_FROM_NUMBER;
 const twilioMmsMediaUrl = process.env.TWILIO_MMS_MEDIA_URL;
+const twilioMessagingServiceSid = process.env.MESSAGING_SERVICE_SID;
 
-async function sendMms(to: string, body: string) {
-  if (!twilioAccountSid || !twilioAuthToken || !twilioFromNumber || !twilioMmsMediaUrl) {
-    throw new Error("Twilio MMS is not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER, and TWILIO_MMS_MEDIA_URL.");
+async function sendTwilioMessage(to: string, body: string) {
+  if (!twilioAccountSid || !twilioAuthToken) {
+    throw new Error("Twilio is not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN.");
+  }
+
+  if (!twilioFromNumber && !twilioMessagingServiceSid) {
+    throw new Error("Twilio sender is not configured. Set TWILIO_FROM_NUMBER or MESSAGING_SERVICE_SID.");
   }
 
   const payload = new URLSearchParams({
     To: to,
-    From: twilioFromNumber,
     Body: body,
-    MediaUrl: twilioMmsMediaUrl,
   });
+
+  if (twilioMessagingServiceSid) {
+    payload.set("MessagingServiceSid", twilioMessagingServiceSid);
+  } else if (twilioFromNumber) {
+    payload.set("From", twilioFromNumber);
+  }
+
+  if (twilioMmsMediaUrl) {
+    payload.set("MediaUrl", twilioMmsMediaUrl);
+  } else if (body.length > 160) {
+    payload.set("SendAsMms", "true");
+  }
 
   const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`, {
     method: "POST",
@@ -33,13 +48,13 @@ async function sendMms(to: string, body: string) {
     body: payload,
   });
 
-  const json = await response.json();
+  const json = (await response.json()) as { message?: unknown; sid?: unknown };
 
   if (!response.ok) {
-    throw new Error(typeof json?.message === "string" ? json.message : "Twilio MMS request failed.");
+    throw new Error(typeof json.message === "string" ? json.message : "Twilio MMS request failed.");
   }
 
-  return typeof json?.sid === "string" ? json.sid : null;
+  return typeof json.sid === "string" ? json.sid : null;
 }
 
 async function processQueuedSms() {
@@ -58,7 +73,7 @@ async function processQueuedSms() {
     }
 
     try {
-      const providerMessageId = await sendMms(phone, text);
+      const providerMessageId = await sendTwilioMessage(phone, text);
       await markNotificationSent(notification.id, providerMessageId);
     } catch (error) {
       await markNotificationFailed(notification.id, error instanceof Error ? error.message : "Failed to send SMS", "twilio");

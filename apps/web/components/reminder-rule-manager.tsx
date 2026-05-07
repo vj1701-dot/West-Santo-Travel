@@ -38,14 +38,30 @@ type EditableRule = ReminderRuleRecord & {
   isDirty?: boolean;
 };
 
+type NotificationActivityRecord = {
+  id: string;
+  status: string;
+  deliveryChannel: string;
+  notificationType: string;
+  providerName: string | null;
+  recipientPhone: string | null;
+  recipientLabel: string | null;
+  attemptCount: number;
+  lastError: string | null;
+  createdAt: string;
+  sentAt: string | null;
+};
+
 export function ReminderRuleManager({
   rules,
   workflows,
   upcomingFlights: initialFlights,
+  recentNotifications,
 }: {
   rules: ReminderRuleRecord[];
   workflows: readonly WorkflowRecord[];
   upcomingFlights: UpcomingFlight[];
+  recentNotifications: NotificationActivityRecord[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -219,6 +235,11 @@ export function ReminderRuleManager({
     return `${f.flightNumber} · ${f.departureAirport} → ${f.arrivalAirport} · ${label} · ${pax}`;
   }
 
+  function formatDateTime(value: string | null) {
+    if (!value) return "Not sent";
+    return new Date(value).toLocaleString();
+  }
+
   return (
     <section className="panel stack">
       <div className="panel-head">
@@ -328,6 +349,56 @@ export function ReminderRuleManager({
             {isSending ? "Sending…" : "Send reminder"}
           </button>
         </div>
+      </div>
+
+      <div className="table-panel stack" style={{ gap: "1rem" }}>
+        <div className="row-card__title">
+          <div>
+            <h3>Recent notification activity</h3>
+            <p className="notes">Latest queued, sent, and failed notifications with provider error details.</p>
+          </div>
+        </div>
+        {recentNotifications.length === 0 ? (
+          <p className="notes">No notification activity yet.</p>
+        ) : (
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Recipient</th>
+                <th>Channel</th>
+                <th>Status</th>
+                <th>Attempts</th>
+                <th>Provider</th>
+                <th>Error / Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentNotifications.map((item) => (
+                <tr key={item.id}>
+                  <td>{formatDateTime(item.createdAt)}</td>
+                  <td>
+                    <div style={{ display: "grid", gap: "0.25rem" }}>
+                      <strong>{item.recipientLabel ?? "Unknown recipient"}</strong>
+                      <span className="muted-inline">{item.recipientPhone ?? item.notificationType}</span>
+                    </div>
+                  </td>
+                  <td>{item.deliveryChannel}</td>
+                  <td>
+                    <span
+                      className={`pill ${item.status === "SENT" ? "confirmed" : item.status === "FAILED" ? "cancelled" : ""}`}
+                    >
+                      {item.status}
+                    </span>
+                  </td>
+                  <td>{item.attemptCount}</td>
+                  <td>{item.providerName ?? "N/A"}</td>
+                  <td>{item.lastError ?? (item.sentAt ? `Sent at ${formatDateTime(item.sentAt)}` : "Pending")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       <div className="manager-layout">

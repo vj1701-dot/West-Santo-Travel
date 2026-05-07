@@ -1,4 +1,4 @@
-import { listReminderRules, listSystemReminderWorkflows, listUpcomingFlightSegments } from "@west-santo/data";
+import { listRecentNotificationLogs, listReminderRules, listSystemReminderWorkflows, listUpcomingFlightSegments } from "@west-santo/data";
 import { redirect } from "next/navigation";
 
 import { AppShell } from "@/components/app-shell";
@@ -21,10 +21,11 @@ export default async function RemindersPage() {
         ? currentUser.coordinatorAirports.map((assignment) => assignment.airportId)
         : [INVALID_SCOPE_AIRPORT_ID]
       : undefined;
-  const [rules, workflows, upcomingSegments] = await Promise.all([
+  const [rules, workflows, upcomingSegments, recentNotifications] = await Promise.all([
     listReminderRules(currentUser.role === "COORDINATOR" ? { createdByUserId: currentUser.id } : undefined),
     Promise.resolve(listSystemReminderWorkflows()),
     listUpcomingFlightSegments(30, { airportIds: coordinatorAirportIds }),
+    listRecentNotificationLogs(50, { airportIds: coordinatorAirportIds }),
   ]);
 
   return (
@@ -56,6 +57,25 @@ export default async function RemindersPage() {
           departureTimeLocal: s.departureTimeLocal.toISOString(),
           departureTimeZone: s.departureTimeZone,
           passengerCount: s.itinerary.itineraryPassengers.length,
+        }))}
+        recentNotifications={recentNotifications.map((item) => ({
+          id: item.id,
+          status: item.status,
+          deliveryChannel: item.deliveryChannel,
+          notificationType: item.notificationType,
+          providerName: item.providerName,
+          recipientPhone: item.recipientPhone,
+          recipientLabel:
+            item.recipientPassenger
+              ? [item.recipientPassenger.firstName, item.recipientPassenger.lastName].filter(Boolean).join(" ")
+              : item.recipientDriver?.name ??
+                [item.recipientUser?.firstName, item.recipientUser?.lastName].filter(Boolean).join(" ").trim() ??
+                item.recipientUser?.email ??
+                null,
+          attemptCount: item.attemptCount,
+          lastError: item.lastError,
+          createdAt: item.createdAt.toISOString(),
+          sentAt: item.sentAt?.toISOString() ?? null,
         }))}
       />
     </AppShell>
