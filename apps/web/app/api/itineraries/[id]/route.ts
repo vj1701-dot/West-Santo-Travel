@@ -20,6 +20,37 @@ function itineraryTouchesAirportScope(
   );
 }
 
+function validateCoordinatorSegmentScope(
+  segments: Array<{
+    departureAirportId: string;
+    arrivalAirportId: string;
+    transportEntries?: Array<{ taskType: TransportTaskType }>;
+  }>,
+  airportIds: string[],
+) {
+  for (const segment of segments) {
+    if (!airportIds.includes(segment.departureAirportId)) {
+      return "Coordinators can update drop off airports only when the departure airport is assigned to them.";
+    }
+
+    if (!airportIds.includes(segment.arrivalAirportId)) {
+      return "Coordinators can update pickup airports only when the arrival airport is assigned to them.";
+    }
+
+    for (const entry of segment.transportEntries ?? []) {
+      if (entry.taskType === TransportTaskType.DROPOFF && !airportIds.includes(segment.departureAirportId)) {
+        return "Drop off assignments are outside your airport scope.";
+      }
+
+      if (entry.taskType === TransportTaskType.PICKUP && !airportIds.includes(segment.arrivalAirportId)) {
+        return "Pickup assignments are outside your airport scope.";
+      }
+    }
+  }
+
+  return null;
+}
+
 const updateItinerarySchema = z.object({
   notes: z.string().nullable().optional(),
   status: z.nativeEnum(ItineraryStatus).optional(),
@@ -97,6 +128,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   const isFullTripUpdate = Array.isArray(parsed.data.passengerIds) || Array.isArray(parsed.data.segments);
 
   if (auth.role === "COORDINATOR") {
+    const scopedAirportIds = auth.coordinatorAirports.map((assignment) => assignment.airportId);
     if (parsed.data.booking !== undefined) {
       return fail("FORBIDDEN", "Booking details are admin-only.", 403);
     }
@@ -107,8 +139,15 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       return fail("NOT_FOUND", "Itinerary not found.", 404);
     }
 
-    if (!itineraryTouchesAirportScope(itinerary, auth.coordinatorAirports.map((assignment) => assignment.airportId))) {
+    if (!itineraryTouchesAirportScope(itinerary, scopedAirportIds)) {
       return fail("FORBIDDEN", "You do not have access to this itinerary.", 403);
+    }
+
+    if (parsed.data.segments) {
+      const scopeError = validateCoordinatorSegmentScope(parsed.data.segments, scopedAirportIds);
+      if (scopeError) {
+        return fail("FORBIDDEN", scopeError, 403);
+      }
     }
 
     const approval = await createApprovalRequest({

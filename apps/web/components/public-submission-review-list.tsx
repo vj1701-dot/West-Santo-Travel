@@ -37,6 +37,24 @@ type ParsedSubmissionPayload = {
   }>;
 };
 
+type SubmissionRawPayload = {
+  source?: string;
+  ai?: {
+    passengers?: Array<{
+      firstName: string;
+      lastName: string;
+      matchStatus: "MATCHED" | "AMBIGUOUS" | "UNRESOLVED";
+      matchedPassengerId?: string | null;
+      matchStrategy?: string | null;
+      candidates?: Array<{
+        id: string;
+        displayName: string;
+        legalName?: string | null;
+      }>;
+    }>;
+  };
+};
+
 function formatDateTime(value: Date | null) {
   if (!value) return "Not reviewed";
   return new Intl.DateTimeFormat("en-US", {
@@ -94,14 +112,21 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
         </label>
       </div>
 
-      {message ? <div className="compact-card"><p>{message}</p></div> : null}
+      {message ? (
+        <div className="compact-card">
+          <p>{message}</p>
+        </div>
+      ) : null}
 
       {visibleSubmissions.map((submission) => {
         const payload = ((submission.normalizedPayload ?? submission.rawPayload) ?? {}) as ParsedSubmissionPayload;
+        const rawPayload = (submission.rawPayload ?? {}) as SubmissionRawPayload;
+        const aiPassengers = rawPayload.ai?.passengers ?? [];
+
         return (
           <article key={submission.id} className="trip-card">
-              <div className="row-card__title">
-                <div style={{ display: "grid", gap: "0.35rem" }}>
+            <div className="row-card__title">
+              <div style={{ display: "grid", gap: "0.35rem" }}>
                 <h3>{payload.submitterName ?? "Unknown submitter"}</h3>
                 <div className="row-meta">
                   <span>{payload.submitterPhone ?? "No phone"}</span>
@@ -119,8 +144,15 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
                 <ul className="detail-list">
                   {(payload.passengers ?? []).map((passenger, index) => (
                     <li key={`${submission.id}-passenger-${index}`}>
-                      <strong>{passenger.firstName} {passenger.lastName}</strong>
-                      <span>{passenger.passengerType ?? "Unknown type"} · {passenger.phone ?? "No phone"}</span>
+                      <strong>
+                        {passenger.firstName} {passenger.lastName}
+                      </strong>
+                      <span>
+                        {passenger.passengerType ?? "Unknown type"} · {passenger.phone ?? "No phone"}
+                        {aiPassengers[index]
+                          ? ` · ${aiPassengers[index].matchStatus}${aiPassengers[index].matchStrategy ? ` (${aiPassengers[index].matchStrategy})` : ""}`
+                          : ""}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -161,6 +193,12 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
                       <span>{submission.notes}</span>
                     </li>
                   ) : null}
+                  {rawPayload.source === "telegram-ai" ? (
+                    <li>
+                      <strong>Source</strong>
+                      <span>Telegram AI draft</span>
+                    </li>
+                  ) : null}
                 </ul>
               </div>
             </div>
@@ -185,8 +223,12 @@ export function PublicSubmissionReviewList({ submissions }: { submissions: Submi
                 <Link className="button-secondary" href={`/submissions/${submission.id}/edit`}>
                   Complete in editor
                 </Link>
-                <button disabled={isPending} name="status" type="submit" value="REJECTED">Reject</button>
-                <button disabled={isPending} name="status" type="submit" value="DUPLICATE_FLAGGED">Flag duplicate</button>
+                <button disabled={isPending} name="status" type="submit" value="REJECTED">
+                  Reject
+                </button>
+                <button disabled={isPending} name="status" type="submit" value="DUPLICATE_FLAGGED">
+                  Flag duplicate
+                </button>
               </form>
             ) : null}
           </article>

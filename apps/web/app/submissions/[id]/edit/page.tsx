@@ -28,6 +28,24 @@ type SubmissionPayload = {
   }>;
 };
 
+type SubmissionRawPayload = {
+  source?: string;
+  ai?: {
+    passengers?: Array<{
+      firstName: string;
+      lastName: string;
+      matchStatus: "MATCHED" | "AMBIGUOUS" | "UNRESOLVED";
+      matchedPassengerId?: string | null;
+      matchStrategy?: string | null;
+      candidates?: Array<{
+        id: string;
+        displayName: string;
+        legalName?: string | null;
+      }>;
+    }>;
+  };
+};
+
 export default async function EditSubmissionPage({ params }: { params: Promise<{ id: string }> }) {
   const currentUser = await requireUser();
   if (!["ADMIN", "COORDINATOR"].includes(currentUser.role)) {
@@ -42,6 +60,16 @@ export default async function EditSubmissionPage({ params }: { params: Promise<{
   }
 
   const payload = ((submission.normalizedPayload ?? submission.rawPayload) ?? {}) as SubmissionPayload;
+  const rawPayload = (submission.rawPayload ?? {}) as SubmissionRawPayload;
+  const aiPassengerNotes = (rawPayload.ai?.passengers ?? [])
+    .map((passenger) => {
+      const candidateText =
+        passenger.candidates && passenger.candidates.length > 0
+          ? passenger.candidates.map((candidate) => candidate.displayName).join(", ")
+          : "none";
+      return `${passenger.firstName} ${passenger.lastName}: ${passenger.matchStatus}${passenger.matchStrategy ? ` (${passenger.matchStrategy})` : ""}; candidates: ${candidateText}`;
+    })
+    .join("\n");
 
   return (
     <AppShell currentUser={currentUser}>
@@ -49,6 +77,14 @@ export default async function EditSubmissionPage({ params }: { params: Promise<{
         title="Complete Submission"
         tooltip="Fill in booking, transport, and accommodation details before moving this submission into itineraries"
       />
+      {rawPayload.source === "telegram-ai" && aiPassengerNotes ? (
+        <section className="compact-card" style={{ marginBottom: "1rem" }}>
+          <p className="eyebrow" style={{ marginBottom: "0.5rem" }}>
+            AI passenger match hints
+          </p>
+          <pre style={{ whiteSpace: "pre-wrap", margin: 0, fontFamily: "inherit" }}>{aiPassengerNotes}</pre>
+        </section>
+      ) : null}
       <SubmissionTripBuilder
         mode="review"
         submitLabel="Create itinerary"

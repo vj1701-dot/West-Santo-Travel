@@ -1,6 +1,8 @@
 import {
+  createTelegramAiSubmissionDraft,
   driverRespondToTransportTask,
   dispatchQueuedNotifications,
+  findTelegramAdminByChatId,
   linkTelegramAccount,
   listDriverTransportTasksByChatId,
   listUpcomingFlightsForUserChat,
@@ -9,9 +11,38 @@ import {
   prisma,
 } from "@west-santo/data";
 import { formatPassengerNames } from "@west-santo/core";
+import { z } from "zod";
 
 const pollMs = Number(process.env.BOT_HEALTH_POLL_MS ?? 60000);
 const token = process.env.TELEGRAM_BOT_TOKEN;
+const geminiApiKey = process.env.GEMINI_API_KEY;
+const geminiModel = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+const appBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "") ?? null;
+
+const aiPassengerSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  phone: z.string().nullable().optional(),
+  passengerType: z.enum(["WEST_SANTO", "GUEST_SANTO", "HARIBHAKTO"]).nullable().optional(),
+  extractedName: z.string().nullable().optional(),
+});
+
+const aiSegmentSchema = z.object({
+  airline: z.string().min(1),
+  flightNumber: z.string().min(1),
+  departureAirport: z.string().min(3),
+  arrivalAirport: z.string().min(3),
+  departureTimeLocal: z.string().min(1),
+  arrivalTimeLocal: z.string().min(1),
+});
+
+const aiItinerarySchema = z.object({
+  submitterName: z.string().nullable().optional(),
+  submitterPhone: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  passengers: z.array(aiPassengerSchema).min(1),
+  segments: z.array(aiSegmentSchema).min(1),
+});
 
 type TelegramUpdate = {
   update_id: number;
@@ -30,6 +61,14 @@ type TelegramUpdate = {
   };
   message?: {
     text?: string;
+    caption?: string;
+    photo?: Array<{
+      file_id: string;
+      file_unique_id: string;
+      width: number;
+      height: number;
+      file_size?: number;
+    }>;
     contact?: {
       phone_number: string;
     };
@@ -88,6 +127,198 @@ async function answerCallbackQuery(callbackQueryId: string, text: string) {
     callback_query_id: callbackQueryId,
     text,
   });
+}
+
+async function getTelegramFileUrl(fileId: string) {
+  const response = await telegram<{ file_path?: string }>("getFile", { file_id: fileId });
+  const filePath = response.result.file_path;
+
+  if (!filePath) {
+    throw new Error("Telegram did not return a file path.");
+  }
+
+  return `https://api.telegram.org/file/bot${token}/${filePath}`;
+}
+
+async function extractItineraryWithGemini(input: { text?: string | null; image?: { mimeType: string; data: string } | null }) {
+  if (!geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is not set.");
+  }
+
+  const parts: Array<Record<string, unknown>> = [
+    {
+      text: [
+        "Extract itinerary data from the provided Telegram message.",
+        "Return JSON only with keys: submitterName, submitterPhone, notes, passengers, segments.",
+        "Each passenger must contain firstName, lastName, optional phone, optional passengerType, optional extractedName.",
+        "Each segment must contain airline, flightNumber, departureAirport, arrivalAirport, departureTimeLocal, arrivalTimeLocal.",
+        "Use passengerType only when clearly implied and restrict it to WEST_SANTO, GUEST_SANTO, HARIBHAKTO.",
+        "Normalize airport values to IATA airport codes when possible.",
+        "Keep datetime strings as seen in the itinerary if you cannot infer timezone-safe conversion.",
+      ].join("\n"),
+    },
+  ];
+
+  if (input.text?.trim()) {
+    parts.push({ text: `Message text:\n${input.text.trim()}` });
+  }
+
+  if (input.image) {
+    parts.push({
+      inline_data: {
+        mime_type: input.image.mimeType,
+        data: input.image.data,
+      },
+    });
+  }
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        generationConfig: {
+          responseMimeType: "application/json",
+        },
+        contents: [
+          {
+            role: "user",
+            parts,
+          },
+        ],
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Gemini request failed with status ${response.status}.`);
+  }
+
+  const payload = (await response.json()) as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{
+          text?: string;
+        }>;
+      };
+    }>;
+  };
+
+  const rawText = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("").trim();
+  if (!rawText) {
+    throw new Error("Gemini returned an empty response.");
+  }
+
+  let parsedJson: unknown;
+  try {
+    parsedJson = JSON.parse(rawText);
+  } catch {
+    throw new Error("Gemini did not return valid JSON.");
+  }
+
+  const parsed = aiItinerarySchema.safeParse(parsedJson);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "Gemini response was missing required itinerary fields.");
+  }
+
+  return parsed.data;
+}
+
+function buildSubmissionReply(input: {
+  submissionId: string;
+  matchedCount: number;
+  ambiguousCount: number;
+  unresolvedCount: number;
+}) {
+  const lines = [
+    `Draft itinerary created: ${input.submissionId}`,
+    `Matched travelers: ${input.matchedCount}`,
+    `Ambiguous travelers: ${input.ambiguousCount}`,
+    `Unresolved travelers: ${input.unresolvedCount}`,
+  ];
+
+  if (appBaseUrl) {
+    lines.push(`Review: ${appBaseUrl}/submissions/${input.submissionId}/edit`);
+  }
+
+  return lines.join("\n");
+}
+
+async function tryCreateAiItineraryDraft(update: TelegramUpdate) {
+  const message = update.message;
+  if (!message) {
+    return false;
+  }
+
+  const chatId = String(message.chat.id);
+  const adminUser = await findTelegramAdminByChatId(chatId);
+  const hasPhoto = Array.isArray(message.photo) && message.photo.length > 0;
+  const messageText = message.text?.trim() ?? message.caption?.trim() ?? "";
+
+  if (!adminUser) {
+    return false;
+  }
+
+  if (!messageText && !hasPhoto) {
+    return false;
+  }
+
+  let image: { mimeType: string; data: string } | null = null;
+  if (hasPhoto) {
+    const photo = [...message.photo!].sort((left, right) => (right.file_size ?? 0) - (left.file_size ?? 0))[0];
+    const fileUrl = await getTelegramFileUrl(photo.file_id);
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error("Unable to download the Telegram image.");
+    }
+    const mimeType = response.headers.get("content-type") || "image/jpeg";
+    const buffer = Buffer.from(await response.arrayBuffer());
+    image = {
+      mimeType,
+      data: buffer.toString("base64"),
+    };
+  }
+
+  const extracted = await extractItineraryWithGemini({
+    text: messageText || null,
+    image,
+  });
+
+  const draft = await createTelegramAiSubmissionDraft({
+    submitterName: extracted.submitterName ?? adminUser.name ?? `${adminUser.firstName} ${adminUser.lastName}`.trim(),
+    submitterPhone: extracted.submitterPhone ?? adminUser.phone ?? null,
+    notes: extracted.notes ?? null,
+    passengers: extracted.passengers.map((passenger) => ({
+      ...passenger,
+      extractedName: passenger.extractedName ?? `${passenger.firstName} ${passenger.lastName}`.trim(),
+    })),
+    segments: extracted.segments,
+    source: {
+      chatId,
+      telegramUsername: message.from?.username ?? null,
+      messageText: messageText || null,
+      imageMimeType: image?.mimeType ?? null,
+    },
+    actorUserId: adminUser.id,
+    responseSummary: `Telegram AI draft ${extracted.passengers.length} travelers / ${extracted.segments.length} segments`,
+  });
+
+  const matchedCount = draft.passengerMatches.filter((item) => item.matchStatus === "MATCHED").length;
+  const ambiguousCount = draft.passengerMatches.filter((item) => item.matchStatus === "AMBIGUOUS").length;
+  const unresolvedCount = draft.passengerMatches.filter((item) => item.matchStatus === "UNRESOLVED").length;
+
+  await sendMessage(
+    message.chat.id,
+    buildSubmissionReply({
+      submissionId: draft.submission.id,
+      matchedCount,
+      ambiguousCount,
+      unresolvedCount,
+    }),
+  );
+
+  return true;
 }
 
 function formatDriverTaskMessage(task: Awaited<ReturnType<typeof listDriverTransportTasksByChatId>> extends { tasks: infer T }
@@ -290,6 +521,19 @@ async function handleMessage(update: TelegramUpdate) {
     }).join("\n\n");
 
     await sendMessage(message.chat.id, text);
+    return;
+  }
+
+  try {
+    const createdDraft = await tryCreateAiItineraryDraft(update);
+    if (createdDraft) {
+      return;
+    }
+  } catch (error) {
+    await sendMessage(
+      message.chat.id,
+      error instanceof Error ? `Unable to create itinerary draft: ${error.message}` : "Unable to create itinerary draft.",
+    );
     return;
   }
 

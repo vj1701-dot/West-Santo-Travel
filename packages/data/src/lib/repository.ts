@@ -29,6 +29,7 @@ import {
 } from "@west-santo/core";
 
 import { classifyTelegramLinkInput, dedupeGoogleSheetsPassengers, normalizeGoogleSheetsPassenger } from "./google-sheets-sync";
+import { matchPassengerByName, normalizePassengerFullName, normalizePassengerMatchName, type PassengerNameMatchResult } from "./passenger-matching";
 import { prisma } from "./prisma";
 
 function toSummaryRole(role?: string | null): UserRole {
@@ -134,6 +135,41 @@ type GoogleSheetsResolvedPassenger = {
   matchStrategy?: GoogleSheetsPassengerMatchStrategy | null;
 };
 
+type AiTravelerMatchStatus = "MATCHED" | "AMBIGUOUS" | "UNRESOLVED";
+
+type AiExtractedPassengerInput = {
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+  passengerType?: "WEST_SANTO" | "GUEST_SANTO" | "HARIBHAKTO" | null;
+  extractedName?: string | null;
+};
+
+type AiExtractedSegmentInput = {
+  airline: string;
+  flightNumber: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  departureTimeLocal: string;
+  arrivalTimeLocal: string;
+};
+
+type AiItineraryDraftInput = {
+  submitterName?: string | null;
+  submitterPhone?: string | null;
+  notes?: string | null;
+  passengers: AiExtractedPassengerInput[];
+  segments: AiExtractedSegmentInput[];
+  source: {
+    chatId: string;
+    telegramUsername?: string | null;
+    messageText?: string | null;
+    imageMimeType?: string | null;
+  };
+  actorUserId: string;
+  responseSummary?: string | null;
+};
+
 type GoogleSheetsResolvedDriver = {
   driver: {
     id: string;
@@ -176,15 +212,11 @@ function normalizeSyncCode(value?: string | null) {
 }
 
 function normalizeSyncName(value?: string | null) {
-  return normalizeSyncText(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return normalizePassengerMatchName(value);
 }
 
 function normalizeSyncPersonName(firstName?: string | null, lastName?: string | null) {
-  return normalizeSyncName(`${normalizeSyncText(firstName)} ${normalizeSyncText(lastName)}`);
+  return normalizePassengerFullName(firstName, lastName);
 }
 
 function buildLocalDateTimeFromParts(date: string, time: string) {
@@ -2352,6 +2384,141 @@ export async function createPublicSubmission(input: {
   });
 }
 
+export async function findTelegramAdminByChatId(chatId: string) {
+  return prisma.user.findFirst({
+    where: {
+      telegramChatId: chatId,
+      isActive: true,
+      role: UserRole.ADMIN,
+    },
+    include: {
+      adminAirports: { include: { airport: true } },
+      coordinatorAirports: { include: { airport: true } },
+    },
+  });
+}
+
+function normalizeAiPassengerType(value?: string | null) {
+  if (value === PassengerType.WEST_SANTO || value === PassengerType.GUEST_SANTO || value === PassengerType.HARIBHAKTO) {
+    return value;
+  }
+
+  return PassengerType.GUEST_SANTO;
+}
+
+function normalizeAiSubmissionPayload(input: AiItineraryDraftInput) {
+  return {
+    submitterName: normalizeSyncText(input.submitterName) || "Telegram admin",
+    submitterPhone: normalizeOptionalPhone(input.submitterPhone ?? null),
+    notes: normalizeSyncText(input.notes) || null,
+    passengers: input.passengers.map((passenger) => ({
+      firstName: normalizeSyncText(passenger.firstName),
+      lastName: normalizeSyncText(passenger.lastName),
+      phone: normalizeOptionalPhone(passenger.phone ?? null),
+      passengerType: normalizeAiPassengerType(passenger.passengerType),
+    })),
+    segments: input.segments.map((segment, index) => ({
+      segmentOrder: index + 1,
+      airline: normalizeSyncText(segment.airline),
+      flightNumber: normalizeSyncText(segment.flightNumber).toUpperCase(),
+      departureAirport: normalizeSyncCode(segment.departureAirport),
+      arrivalAirport: normalizeSyncCode(segment.arrivalAirport),
+      departureTimeLocal: segment.departureTimeLocal,
+      arrivalTimeLocal: segment.arrivalTimeLocal,
+    })),
+  };
+}
+
+function summarizePassengerMatchResult(match: PassengerNameMatchResult) {
+  return {
+    matchStatus: match.status as AiTravelerMatchStatus,
+    matchedPassengerId: match.status === "MATCHED" ? match.passenger.id : null,
+    matchStrategy: match.status === "MATCHED" ? match.strategy : null,
+    candidates: match.candidates.map((candidate) => ({
+      id: candidate.id,
+      displayName: `${candidate.firstName} ${candidate.lastName}`.trim(),
+      legalName: candidate.legalName ?? null,
+    })),
+  };
+}
+
+export async function createTelegramAiSubmissionDraft(input: AiItineraryDraftInput) {
+  const normalizedPayload = normalizeAiSubmissionPayload(input);
+
+  return prisma.$transaction(async (tx) => {
+    const activePassengers = await tx.passenger.findMany({
+      where: { isActive: true },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        legalName: true,
+      },
+      orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+    });
+
+    const passengerMatches = normalizedPayload.passengers.map((passenger) => {
+      const match = matchPassengerByName(activePassengers, passenger);
+      return {
+        firstName: passenger.firstName,
+        lastName: passenger.lastName,
+        phone: passenger.phone,
+        passengerType: passenger.passengerType,
+        extractedName: `${passenger.firstName} ${passenger.lastName}`.trim(),
+        ...summarizePassengerMatchResult(match),
+      };
+    });
+
+    const submission = await tx.publicSubmission.create({
+      data: {
+        rawPayload: {
+          source: "telegram-ai",
+          sourceMetadata: {
+            telegramChatId: input.source.chatId,
+            telegramUsername: input.source.telegramUsername ?? null,
+            imageMimeType: input.source.imageMimeType ?? null,
+            messageText: input.source.messageText ?? null,
+          },
+          ai: {
+            passengers: passengerMatches,
+          },
+          extracted: normalizedPayload,
+        },
+        normalizedPayload,
+        notes: normalizedPayload.notes,
+      },
+    });
+
+    await tx.aiQueryLog.create({
+      data: {
+        userId: input.actorUserId,
+        roleSnapshot: UserRole.ADMIN,
+        queryText: input.source.messageText?.trim() || "[telegram image itinerary]",
+        responseSummary: input.responseSummary ?? `Submission ${submission.id} created from Telegram AI draft`,
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "PUBLIC_SUBMISSION_CREATED_FROM_TELEGRAM_AI",
+      entityType: "PublicSubmission",
+      entityId: submission.id,
+      actorUserId: input.actorUserId,
+      source: AuditSource.BOT,
+      newValues: {
+        status: submission.status,
+        matchedPassengers: passengerMatches.filter((item) => item.matchStatus === "MATCHED").length,
+        ambiguousPassengers: passengerMatches.filter((item) => item.matchStatus === "AMBIGUOUS").length,
+        unresolvedPassengers: passengerMatches.filter((item) => item.matchStatus === "UNRESOLVED").length,
+      },
+    });
+
+    return {
+      submission,
+      passengerMatches,
+    };
+  });
+}
+
 export async function listPublicSubmissions(status?: SubmissionStatus) {
   return prisma.publicSubmission.findMany({
     where: status ? { status } : undefined,
@@ -3088,73 +3255,32 @@ async function findPassengerBySyncedName(
   tx: Prisma.TransactionClient,
   input: { firstName: string; lastName: string },
 ) {
-  const normalizedTarget = normalizeSyncPersonName(input.firstName, input.lastName);
-  const normalizedSwappedTarget = normalizeSyncPersonName(input.lastName, input.firstName);
-  if (!normalizedTarget) {
+  const candidates = await tx.passenger.findMany({
+    where: { isActive: true },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      legalName: true,
+    },
+  });
+  const match = matchPassengerByName(candidates, input);
+  if (match.status !== "MATCHED") {
     return null;
   }
 
-  const candidates = await tx.passenger.findMany({
-    where: { isActive: true },
+  const passenger = await tx.passenger.findUnique({
+    where: { id: match.passenger.id },
   });
 
-  const exactFullMatches = candidates.filter((passenger) => {
-    const normalizedPassengerName = normalizeSyncPersonName(passenger.firstName, passenger.lastName);
-    const normalizedLegalName = normalizeSyncName(passenger.legalName);
-    return normalizedPassengerName === normalizedTarget || normalizedLegalName === normalizedTarget;
-  });
-  if (exactFullMatches.length === 1) {
-    return {
-      passenger: exactFullMatches[0],
-      strategy: "exact_full" as const,
-    };
+  if (!passenger) {
+    return null;
   }
 
-  const exactSwappedMatches = candidates.filter((passenger) => {
-    const normalizedPassengerName = normalizeSyncPersonName(passenger.firstName, passenger.lastName);
-    const normalizedLegalName = normalizeSyncName(passenger.legalName);
-    return normalizedPassengerName === normalizedSwappedTarget || normalizedLegalName === normalizedSwappedTarget;
-  });
-  if (exactSwappedMatches.length === 1) {
-    return {
-      passenger: exactSwappedMatches[0],
-      strategy: "exact_swapped" as const,
-    };
-  }
-
-  const fuzzyFullMatch = pickConfidentMatch(
-    candidates.map((passenger) => ({
-      passenger,
-      score: Math.max(
-        getSimilarityScore(normalizeSyncPersonName(passenger.firstName, passenger.lastName), normalizedTarget),
-        getSimilarityScore(normalizeSyncName(passenger.legalName), normalizedTarget),
-      ),
-    })),
-  );
-  if (fuzzyFullMatch) {
-    return {
-      passenger: fuzzyFullMatch.passenger,
-      strategy: "fuzzy_full" as const,
-    };
-  }
-
-  const fuzzySwappedMatch = pickConfidentMatch(
-    candidates.map((passenger) => ({
-      passenger,
-      score: Math.max(
-        getSimilarityScore(normalizeSyncPersonName(passenger.firstName, passenger.lastName), normalizedSwappedTarget),
-        getSimilarityScore(normalizeSyncName(passenger.legalName), normalizedSwappedTarget),
-      ),
-    })),
-  );
-  if (fuzzySwappedMatch) {
-    return {
-      passenger: fuzzySwappedMatch.passenger,
-      strategy: "fuzzy_swapped" as const,
-    };
-  }
-
-  return null;
+  return {
+    passenger,
+    strategy: match.strategy,
+  };
 }
 
 async function createPassengerForGoogleSheetsSync(

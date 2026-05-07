@@ -19,6 +19,24 @@ function itineraryTouchesAirportScope(
   );
 }
 
+function validateCoordinatorSegmentScope(
+  segment: {
+    departureAirportId: string;
+    arrivalAirportId: string;
+  },
+  airportIds: string[],
+) {
+  if (!airportIds.includes(segment.departureAirportId)) {
+    return "Coordinators can add drop off airports only when the departure airport is assigned to them.";
+  }
+
+  if (!airportIds.includes(segment.arrivalAirportId)) {
+    return "Coordinators can add pickup airports only when the arrival airport is assigned to them.";
+  }
+
+  return null;
+}
+
 const segmentSchema = z.object({
   segmentOrder: z.number().int().min(1),
   airline: z.string().min(1),
@@ -41,12 +59,17 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   }
 
   if (auth.role === "COORDINATOR") {
+    const scopedAirportIds = auth.coordinatorAirports.map((assignment) => assignment.airportId);
     const itinerary = await getItineraryDetail(id);
     if (!itinerary) {
       return fail("NOT_FOUND", "Itinerary not found.", 404);
     }
-    if (!itineraryTouchesAirportScope(itinerary, auth.coordinatorAirports.map((assignment) => assignment.airportId))) {
+    if (!itineraryTouchesAirportScope(itinerary, scopedAirportIds)) {
       return fail("FORBIDDEN", "You do not have access to this itinerary.", 403);
+    }
+    const scopeError = validateCoordinatorSegmentScope(parsed.data, scopedAirportIds);
+    if (scopeError) {
+      return fail("FORBIDDEN", scopeError, 403);
     }
 
     const approval = await createApprovalRequest({
