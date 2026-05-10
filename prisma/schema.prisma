@@ -61,6 +61,11 @@ enum SubmissionStatus {
   DUPLICATE_FLAGGED
 }
 
+enum OptInRole {
+  PASSENGER
+  DRIVER
+}
+
 enum DuplicateRule {
   PASSENGER_FLIGHT_DATE
   BOOKING_CONFIRMATION_TRAVELER
@@ -85,6 +90,7 @@ enum NotificationType {
   REMINDER_24H
   REMINDER_2H
   FLIGHT_REMINDER
+  OPT_IN_CONFIRMATION
   RULE_REMINDER
   UNASSIGNED_ALERT
   APPROVAL_REQUESTED
@@ -206,6 +212,7 @@ model Passenger {
   itineraryPassengers    ItineraryPassenger[]
   bookingAllocations     BookingAllocation[]
   notificationRecipients NotificationLog[]
+  publicOptIns           PublicOptIn[]
   auditPassengerActor    AuditLog[] @relation("AuditActorPassenger")
 
   @@index([lastName, firstName])
@@ -388,6 +395,7 @@ model Driver {
   statusHistoryChanges   TransportTaskStatusHistory[]
   locationPings          TransportTaskLocationPing[]
   notificationRecipients NotificationLog[]
+  publicOptIns           PublicOptIn[]
   auditDriverActor       AuditLog[] @relation("AuditActorDriver")
 
   @@index([isActive])
@@ -692,6 +700,25 @@ model PublicSubmission {
   duplicateFlags DuplicateFlag[]
 
   @@index([status])
+}
+
+model PublicOptIn {
+  id             String    @id @default(uuid()) @db.Uuid
+  fullName       String
+  phone          String
+  role           OptInRole
+  consentText    String
+  sourcePath     String
+  submittedAt    DateTime  @default(now()) @db.Timestamptz(6)
+  passengerId    String?   @db.Uuid
+  driverId       String?   @db.Uuid
+
+  passenger Passenger? @relation(fields: [passengerId], references: [id], onDelete: SetNull)
+  driver    Driver?    @relation(fields: [driverId], references: [id], onDelete: SetNull)
+
+  @@index([phone, role, submittedAt])
+  @@index([passengerId])
+  @@index([driverId])
 }
 
 model DuplicateFlag {

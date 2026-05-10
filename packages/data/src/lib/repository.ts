@@ -6,6 +6,7 @@ import {
   NotificationChannel,
   NotificationStatus,
   NotificationType,
+  OptInRole,
   PassengerType,
   ProfileType,
   Prisma,
@@ -53,6 +54,10 @@ function parseDisplayName(displayName?: string | null) {
     firstName: firstName?.trim() || null,
     lastName,
   };
+}
+
+function namesAreEquivalent(left?: string | null, right?: string | null) {
+  return normalizeSyncText(left).localeCompare(normalizeSyncText(right), undefined, { sensitivity: "accent" }) === 0;
 }
 
 type FlightSegmentInput = {
@@ -134,6 +139,17 @@ type GoogleSheetsResolvedPassenger = {
   mode: "matched" | "created";
   matchStrategy?: GoogleSheetsPassengerMatchStrategy | null;
 };
+
+type PublicOptInInput = {
+  fullName: string;
+  phone: string;
+  role: OptInRole;
+  consentText: string;
+  sourcePath: string;
+};
+
+const PUBLIC_OPT_IN_CONFIRMATION_TEXT =
+  "West Santo Travel: You are subscribed to operational travel text updates. Msg&data rates may apply. Reply HELP for help, STOP to cancel.";
 
 type AiTravelerMatchStatus = "MATCHED" | "AMBIGUOUS" | "UNRESOLVED";
 
@@ -2381,6 +2397,192 @@ export async function createPublicSubmission(input: {
     });
 
     return submission;
+  });
+}
+
+export async function createPublicOptIn(input: PublicOptInInput) {
+  const fullName = normalizeSyncText(input.fullName);
+  const phone = normalizeOptionalPhone(input.phone);
+  const consentText = normalizeSyncText(input.consentText);
+  const sourcePath = normalizeSyncText(input.sourcePath) || "/opt-in";
+
+  if (!fullName) {
+    throw new Error("Full name is required.");
+  }
+
+  if (!phone) {
+    throw new Error("A valid phone number is required.");
+  }
+
+  if (!consentText) {
+    throw new Error("Consent text is required.");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    if (input.role === OptInRole.PASSENGER) {
+      const parsedName = parseDisplayName(fullName);
+      const firstName = parsedName.firstName ?? fullName;
+      const lastName = parsedName.lastName ?? "";
+
+      let passenger = await tx.passenger.findFirst({
+        where: {
+          phone,
+          isActive: true,
+        },
+        orderBy: [{ updatedAt: "desc" }],
+      });
+
+      if (passenger) {
+        const nextFirstName =
+          !normalizeSyncText(passenger.firstName) || namesAreEquivalent(passenger.firstName, firstName)
+            ? firstName
+            : passenger.firstName;
+        const nextLastName =
+          !normalizeSyncText(passenger.lastName) || namesAreEquivalent(passenger.lastName, lastName)
+            ? lastName
+            : passenger.lastName;
+
+        passenger = await tx.passenger.update({
+          where: { id: passenger.id },
+          data: {
+            firstName: nextFirstName,
+            lastName: nextLastName,
+          },
+        });
+      } else {
+        passenger = await tx.passenger.create({
+          data: {
+            firstName,
+            lastName,
+            phone,
+            passengerType: PassengerType.GUEST_SANTO,
+          },
+        });
+      }
+
+      const optIn = await tx.publicOptIn.create({
+        data: {
+          fullName,
+          phone,
+          role: input.role,
+          consentText,
+          sourcePath,
+          passengerId: passenger.id,
+        },
+        include: {
+          passenger: true,
+          driver: true,
+        },
+      });
+
+      await createAuditLog(tx, {
+        action: "PUBLIC_OPT_IN_CREATED",
+        entityType: "PublicOptIn",
+        entityId: optIn.id,
+        source: AuditSource.WEB,
+        newValues: {
+          role: input.role,
+          phone,
+          linkedPassengerId: passenger.id,
+        },
+      });
+
+      await createQueuedNotification(tx, {
+        notificationType: NotificationType.OPT_IN_CONFIRMATION,
+        deliveryChannel: NotificationChannel.SMS,
+        recipientPassengerId: passenger.id,
+        recipientPhone: phone,
+        dedupeKey: `public-optin:sms:passenger:${phone}:${optIn.id}`,
+        payload: { text: PUBLIC_OPT_IN_CONFIRMATION_TEXT },
+      });
+
+      return optIn;
+    }
+
+    let driver = await tx.driver.findFirst({
+      where: {
+        phone,
+        isActive: true,
+      },
+      orderBy: [{ updatedAt: "desc" }],
+    });
+
+    if (driver) {
+      const nextName = !normalizeSyncText(driver.name) || namesAreEquivalent(driver.name, fullName) ? fullName : driver.name;
+      driver = await tx.driver.update({
+        where: { id: driver.id },
+        data: {
+          name: nextName,
+        },
+      });
+    } else {
+      driver = await tx.driver.create({
+        data: {
+          name: fullName,
+          phone,
+        },
+      });
+    }
+
+    const optIn = await tx.publicOptIn.create({
+      data: {
+        fullName,
+        phone,
+        role: input.role,
+        consentText,
+        sourcePath,
+        driverId: driver.id,
+      },
+      include: {
+        passenger: true,
+        driver: {
+          include: {
+            driverAirports: {
+              include: { airport: true },
+            },
+          },
+        },
+      },
+    });
+
+    await createAuditLog(tx, {
+      action: "PUBLIC_OPT_IN_CREATED",
+      entityType: "PublicOptIn",
+      entityId: optIn.id,
+      source: AuditSource.WEB,
+      newValues: {
+        role: input.role,
+        phone,
+        linkedDriverId: driver.id,
+      },
+    });
+
+    await createQueuedNotification(tx, {
+      notificationType: NotificationType.OPT_IN_CONFIRMATION,
+      deliveryChannel: NotificationChannel.SMS,
+      recipientDriverId: driver.id,
+      recipientPhone: phone,
+      dedupeKey: `public-optin:sms:driver:${phone}:${optIn.id}`,
+      payload: { text: PUBLIC_OPT_IN_CONFIRMATION_TEXT },
+    });
+
+    return optIn;
+  });
+}
+
+export async function listPublicOptIns() {
+  return prisma.publicOptIn.findMany({
+    orderBy: { submittedAt: "desc" },
+    include: {
+      passenger: true,
+      driver: {
+        include: {
+          driverAirports: {
+            include: { airport: true },
+          },
+        },
+      },
+    },
   });
 }
 

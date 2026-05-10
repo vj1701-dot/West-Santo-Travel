@@ -16,7 +16,7 @@ import { z } from "zod";
 const pollMs = Number(process.env.BOT_HEALTH_POLL_MS ?? 60000);
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const geminiApiKey = process.env.GEMINI_API_KEY;
-const geminiModel = process.env.GEMINI_MODEL ?? "gemini-2.0-flash";
+const geminiModel = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 const appBaseUrl = process.env.APP_BASE_URL?.replace(/\/$/, "") ?? null;
 
 const aiPassengerSchema = z.object({
@@ -43,6 +43,39 @@ const aiItinerarySchema = z.object({
   passengers: z.array(aiPassengerSchema).min(1),
   segments: z.array(aiSegmentSchema).min(1),
 });
+
+function formatZodIssues(error: z.ZodError) {
+  return error.issues.map((issue) => ({
+    path: issue.path.join(".") || "(root)",
+    code: issue.code,
+    message: issue.message,
+  }));
+}
+
+function logBotError(event: string, error: unknown, context?: Record<string, unknown>) {
+  if (error instanceof z.ZodError) {
+    console.error(`[bot] ${event}`, {
+      ...context,
+      issues: formatZodIssues(error),
+    });
+    return;
+  }
+
+  if (error instanceof Error) {
+    console.error(`[bot] ${event}`, {
+      ...context,
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return;
+  }
+
+  console.error(`[bot] ${event}`, {
+    ...context,
+    error,
+  });
+}
 
 type TelegramUpdate = {
   update_id: number;
@@ -140,6 +173,15 @@ async function getTelegramFileUrl(fileId: string) {
   return `https://api.telegram.org/file/bot${token}/${filePath}`;
 }
 
+function normalizeGeminiImageMimeType(value?: string | null) {
+  const normalized = value?.split(";")[0]?.trim().toLowerCase() ?? "";
+  if (normalized === "image/jpeg" || normalized === "image/png" || normalized === "image/webp" || normalized === "image/heic" || normalized === "image/heif") {
+    return normalized;
+  }
+
+  return "image/jpeg";
+}
+
 async function extractItineraryWithGemini(input: { text?: string | null; image?: { mimeType: string; data: string } | null }) {
   if (!geminiApiKey) {
     throw new Error("GEMINI_API_KEY is not set.");
@@ -173,10 +215,13 @@ async function extractItineraryWithGemini(input: { text?: string | null; image?:
   }
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-goog-api-key": geminiApiKey,
+      },
       body: JSON.stringify({
         generationConfig: {
           responseMimeType: "application/json",
@@ -192,7 +237,8 @@ async function extractItineraryWithGemini(input: { text?: string | null; image?:
   );
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed with status ${response.status}.`);
+    const errorText = await response.text();
+    throw new Error(`Gemini request failed with status ${response.status}: ${errorText}`);
   }
 
   const payload = (await response.json()) as {
@@ -213,12 +259,24 @@ async function extractItineraryWithGemini(input: { text?: string | null; image?:
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(rawText);
-  } catch {
+  } catch (error) {
+    logBotError("gemini json parse failed", error, {
+      rawTextPreview: rawText.slice(0, 1000),
+      hasText: Boolean(input.text?.trim()),
+      hasImage: Boolean(input.image),
+      imageMimeType: input.image?.mimeType ?? null,
+    });
     throw new Error("Gemini did not return valid JSON.");
   }
 
   const parsed = aiItinerarySchema.safeParse(parsedJson);
   if (!parsed.success) {
+    logBotError("gemini itinerary schema validation failed", parsed.error, {
+      parsedJson,
+      hasText: Boolean(input.text?.trim()),
+      hasImage: Boolean(input.image),
+      imageMimeType: input.image?.mimeType ?? null,
+    });
     throw new Error(parsed.error.issues[0]?.message ?? "Gemini response was missing required itinerary fields.");
   }
 
@@ -267,58 +325,103 @@ async function tryCreateAiItineraryDraft(update: TelegramUpdate) {
   let image: { mimeType: string; data: string } | null = null;
   if (hasPhoto) {
     const photo = [...message.photo!].sort((left, right) => (right.file_size ?? 0) - (left.file_size ?? 0))[0];
-    const fileUrl = await getTelegramFileUrl(photo.file_id);
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new Error("Unable to download the Telegram image.");
+
+    try {
+      const fileUrl = await getTelegramFileUrl(photo.file_id);
+      const response = await fetch(fileUrl);
+      if (!response.ok) {
+        throw new Error("Unable to download the Telegram image.");
+      }
+      const mimeType = normalizeGeminiImageMimeType(response.headers.get("content-type"));
+      const buffer = Buffer.from(await response.arrayBuffer());
+      image = {
+        mimeType,
+        data: buffer.toString("base64"),
+      };
+    } catch (error) {
+      logBotError("telegram image fetch failed", error, {
+        chatId,
+        telegramUsername: message.from?.username ?? null,
+        hasText: Boolean(messageText),
+        photoCount: message.photo?.length ?? 0,
+        selectedPhotoFileId: photo.file_id,
+      });
+      throw error;
     }
-    const mimeType = response.headers.get("content-type") || "image/jpeg";
-    const buffer = Buffer.from(await response.arrayBuffer());
-    image = {
-      mimeType,
-      data: buffer.toString("base64"),
-    };
   }
 
-  const extracted = await extractItineraryWithGemini({
-    text: messageText || null,
-    image,
-  });
+  try {
+    const extracted = await extractItineraryWithGemini({
+      text: messageText || null,
+      image,
+    });
 
-  const draft = await createTelegramAiSubmissionDraft({
-    submitterName: extracted.submitterName ?? adminUser.name ?? `${adminUser.firstName} ${adminUser.lastName}`.trim(),
-    submitterPhone: extracted.submitterPhone ?? adminUser.phone ?? null,
-    notes: extracted.notes ?? null,
-    passengers: extracted.passengers.map((passenger) => ({
-      ...passenger,
-      extractedName: passenger.extractedName ?? `${passenger.firstName} ${passenger.lastName}`.trim(),
-    })),
-    segments: extracted.segments,
-    source: {
+    console.log("[bot] itinerary extraction succeeded", {
       chatId,
       telegramUsername: message.from?.username ?? null,
-      messageText: messageText || null,
-      imageMimeType: image?.mimeType ?? null,
-    },
-    actorUserId: adminUser.id,
-    responseSummary: `Telegram AI draft ${extracted.passengers.length} travelers / ${extracted.segments.length} segments`,
-  });
+      adminUserId: adminUser.id,
+      hasText: Boolean(messageText),
+      hasImage: Boolean(image),
+      passengerCount: extracted.passengers.length,
+      segmentCount: extracted.segments.length,
+    });
 
-  const matchedCount = draft.passengerMatches.filter((item) => item.matchStatus === "MATCHED").length;
-  const ambiguousCount = draft.passengerMatches.filter((item) => item.matchStatus === "AMBIGUOUS").length;
-  const unresolvedCount = draft.passengerMatches.filter((item) => item.matchStatus === "UNRESOLVED").length;
+    const draft = await createTelegramAiSubmissionDraft({
+      submitterName: extracted.submitterName ?? adminUser.name ?? `${adminUser.firstName} ${adminUser.lastName}`.trim(),
+      submitterPhone: extracted.submitterPhone ?? adminUser.phone ?? null,
+      notes: extracted.notes ?? null,
+      passengers: extracted.passengers.map((passenger) => ({
+        ...passenger,
+        extractedName: passenger.extractedName ?? `${passenger.firstName} ${passenger.lastName}`.trim(),
+      })),
+      segments: extracted.segments,
+      source: {
+        chatId,
+        telegramUsername: message.from?.username ?? null,
+        messageText: messageText || null,
+        imageMimeType: image?.mimeType ?? null,
+      },
+      actorUserId: adminUser.id,
+      responseSummary: `Telegram AI draft ${extracted.passengers.length} travelers / ${extracted.segments.length} segments`,
+    });
 
-  await sendMessage(
-    message.chat.id,
-    buildSubmissionReply({
+    const matchedCount = draft.passengerMatches.filter((item) => item.matchStatus === "MATCHED").length;
+    const ambiguousCount = draft.passengerMatches.filter((item) => item.matchStatus === "AMBIGUOUS").length;
+    const unresolvedCount = draft.passengerMatches.filter((item) => item.matchStatus === "UNRESOLVED").length;
+
+    console.log("[bot] itinerary draft created", {
+      chatId,
+      telegramUsername: message.from?.username ?? null,
+      adminUserId: adminUser.id,
       submissionId: draft.submission.id,
       matchedCount,
       ambiguousCount,
       unresolvedCount,
-    }),
-  );
+    });
 
-  return true;
+    await sendMessage(
+      message.chat.id,
+      buildSubmissionReply({
+        submissionId: draft.submission.id,
+        matchedCount,
+        ambiguousCount,
+        unresolvedCount,
+      }),
+    );
+
+    return true;
+  } catch (error) {
+    logBotError("itinerary draft creation failed", error, {
+      chatId,
+      telegramUsername: message.from?.username ?? null,
+      adminUserId: adminUser.id,
+      hasText: Boolean(messageText),
+      textPreview: messageText.slice(0, 300),
+      hasImage: Boolean(image),
+      imageMimeType: image?.mimeType ?? null,
+    });
+    throw error;
+  }
 }
 
 function formatDriverTaskMessage(task: Awaited<ReturnType<typeof listDriverTransportTasksByChatId>> extends { tasks: infer T }

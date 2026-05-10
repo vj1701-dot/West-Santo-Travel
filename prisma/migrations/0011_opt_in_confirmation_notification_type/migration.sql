@@ -1,0 +1,1 @@
+ALTER TYPE "NotificationType" ADD VALUE 'OPT_IN_CONFIRMATION';

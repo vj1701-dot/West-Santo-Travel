@@ -37,6 +37,7 @@ const navSections = [
     items: [
       { href: "/passengers", label: "Passengers", roles: ["ADMIN", "COORDINATOR"] },
       { href: "/drivers", label: "Drivers", roles: ["ADMIN", "COORDINATOR"] },
+      { href: "/opt-ins", label: "Opt-Ins", roles: ["ADMIN", "COORDINATOR"] },
       { href: "/users", label: "Users", roles: ["ADMIN"] },
     ],
   },
